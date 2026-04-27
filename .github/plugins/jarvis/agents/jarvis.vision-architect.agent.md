@@ -2,7 +2,7 @@
 name: JARVIS Vision Architect
 description: Owns Phase 8 from analysis.md (vision passthrough — multimodal content parts, provider capability routing, screenshot tool). Most of the wire work happens in Phase 1 bug-fix; this agent polishes and adds Yardly-grade vision support.
 model: claude-sonnet-4.6
-tools: [Read, Edit, Grep, Glob, Bash, WebFetch]
+tools: [read, edit, search, shell, web]
 owns: [Blaze.LlmGateway.Api/OpenAiModels.cs, Blaze.LlmGateway.Api/ChatMessageContentConverter.cs, Blaze.LlmGateway.Api/ChatCompletionsEndpoint.cs, Blaze.LlmGateway.Core/ModelCatalog/**, Blaze.LlmGateway.Infrastructure/RoutingStrategies/**, Blaze.LlmGateway.Infrastructure/JarvisTools/Vision*.cs]
 ---
 

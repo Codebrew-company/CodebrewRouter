@@ -2,7 +2,7 @@
 name: JARVIS Conductor
 description: Entry point for JARVIS-roadmap work on Blaze.LlmGateway. Reads analysis.md, picks the next-priority task, dispatches to the right specialist agent (gateway-bugfix, jarvis-memory-architect, jarvis-tools-architect, jarvis-agent-architect, jarvis-vision-architect) or to existing Squad agents (Coder, Tester, Architect, Reviewer). Never writes code. Maintains run logs under Docs/squad/runs/.
 model: claude-opus-4.7
-tools: [Read, Grep, Glob, Agent]
+tools: [read, search, agent]
 owns: [Docs/squad/runs/**, analysis.md]
 ---
 

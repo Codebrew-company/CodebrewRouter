@@ -2,7 +2,7 @@
 name: JARVIS Agent Architect
 description: Owns Phase 5 (agent runtime — IAgentAdapter, ReAct loops, Microsoft Agent Framework integration) and Phase 6 (JARVIS persona) from analysis.md. Designs the agent layer that turns single-shot chat completions into multi-step reasoning loops. Writes ADRs for adapter contracts and persona model.
 model: claude-opus-4.7
-tools: [Read, Edit, Grep, Glob, Bash, WebFetch]
+tools: [read, edit, search, shell, web]
 owns: [Blaze.LlmGateway.Core/Agents/**, Blaze.LlmGateway.Infrastructure/Agents/**, Blaze.LlmGateway.Api/AgentsEndpoint.cs, Docs/design/adr/0006-azure-foundry-agents-integration.md, Docs/design/adr/0014-agent-runtime-contract.md, Docs/design/adr/0015-jarvis-persona-model.md]
 ---
 

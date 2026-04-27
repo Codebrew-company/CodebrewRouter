@@ -148,3 +148,25 @@ Protocol and command references:
 - Slash commands: `/squad-plan`, `/squad-implement`, `/squad-review`, `/squad-security` (Claude Code) or `/agent squad` (Copilot CLI after `copilot plugin install ./.github/plugins/squad`).
 
 Edit under `prompts/squad/` then run `pwsh ./scripts/sync-squad.ps1` to regenerate the `.github/plugins/squad/` and `.claude/` copies. Never edit the generated copies by hand.
+
+## JARVIS Roadmap Fleet
+
+Above the Squad sits the **JARVIS fleet** — a 6-agent layer that executes the priority-ordered roadmap in [`analysis.md`](./analysis.md). The Conductor reads the roadmap, picks the next-priority phase, and dispatches a JARVIS specialist (which in turn delegates implementation work down to `squad-coder` / `squad-tester` when needed).
+
+Source of truth: [`prompts/jarvis/`](./prompts/jarvis/). Roster:
+
+| Source | Claude agent | Copilot agent | Phase(s) |
+|---|---|---|---|
+| `conductor.prompt.md` | `jarvis-conductor` | `jarvis.conductor` | Orchestrator |
+| `gateway-bugfix.prompt.md` | `gateway-bugfix` | `jarvis.gateway-bugfix` | 1 |
+| `memory-architect.prompt.md` | `jarvis-memory-architect` | `jarvis.memory-architect` | 2, 4 |
+| `tools-architect.prompt.md` | `jarvis-tools-architect` | `jarvis.tools-architect` | 3 |
+| `agent-architect.prompt.md` | `jarvis-agent-architect` | `jarvis.agent-architect` | 5, 6 |
+| `vision-architect.prompt.md` | `jarvis-vision-architect` | `jarvis.vision-architect` | 8 |
+
+Invocation:
+
+- **Claude Code:** `> Use the jarvis-conductor agent.` (or jump to a specialist by name).
+- **Copilot CLI:** `copilot plugin install ./.github/plugins/jarvis` once, then `/agent jarvis` (or `/agent jarvis.gateway-bugfix` for direct dispatch). Slash commands `/jarvis` and `/jarvis-status` are also wired.
+
+Edit under `prompts/jarvis/` then run `pwsh ./scripts/sync-jarvis.ps1` to regenerate the `.github/plugins/jarvis/` and `.claude/agents/` copies. Never edit the generated copies by hand.

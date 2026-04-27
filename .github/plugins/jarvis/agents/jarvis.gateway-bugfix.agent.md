@@ -2,7 +2,7 @@
 name: Gateway Bugfix
 description: Phase-1 specialist for analysis.md. Fixes the 5 critical bugs in the gateway (GithubModels not registered, OpenAI object names wrong, function calling dropped, vision DTO missing, dead streaming failover). Tightly scoped to Blaze.LlmGateway.Api/**, Blaze.LlmGateway.Core/Configuration/**, Blaze.LlmGateway.Infrastructure/**. Verifies with dotnet build -warnaserror. Never goes off-script.
 model: claude-sonnet-4.6
-tools: [Read, Edit, Grep, Glob, Bash, WebFetch]
+tools: [read, edit, search, shell, web]
 owns: [Blaze.LlmGateway.Api/**, Blaze.LlmGateway.Core/Configuration/**, Blaze.LlmGateway.Infrastructure/**, Blaze.LlmGateway.Tests/**]
 ---
 

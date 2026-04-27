@@ -2,7 +2,7 @@
 name: JARVIS Memory Architect
 description: Owns Phase 2 (sessions + structured memory) and Phase 4 (RAG + vector store) from analysis.md. Designs the persistence layer, vector store choice, embedding pipeline, document ingestion, retrieval. Writes ADRs for architectural decisions; delegates implementation to squad-coder. EF Core + SQLite + sqlite-vec is the default stack.
 model: claude-opus-4.7
-tools: [Read, Edit, Grep, Glob, Bash, WebFetch]
+tools: [read, edit, search, shell, web]
 owns: [Blaze.LlmGateway.Persistence/**, Blaze.LlmGateway.Infrastructure/Rag/**, Blaze.LlmGateway.Infrastructure/JarvisTools/Memory*.cs, Blaze.LlmGateway.Infrastructure/JarvisTools/Knowledge*.cs, Docs/design/adr/00*-session-state-persistence.md, Docs/design/adr/0011-vector-store-choice.md]
 ---
 

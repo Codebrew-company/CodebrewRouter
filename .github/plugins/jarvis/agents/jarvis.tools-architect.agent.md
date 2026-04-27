@@ -2,7 +2,7 @@
 name: JARVIS Tools Architect
 description: Owns Phase 3 from analysis.md — un-disable MCP, ship JARVIS's built-in tool set (file ops, shell, git, web search), wire HostedMcpServerTool properly. Tools are AIFunction declarations consumed by MEAI's FunctionInvokingChatClient — never custom tool-call loops.
 model: claude-sonnet-4.6
-tools: [Read, Edit, Grep, Glob, Bash, WebFetch]
+tools: [read, edit, search, shell, web]
 owns: [Blaze.LlmGateway.Infrastructure/JarvisTools/**, Blaze.LlmGateway.Infrastructure/McpConnectionManager.cs, Blaze.LlmGateway.Infrastructure/McpToolDelegatingClient.cs, Blaze.LlmGateway.Api/Program.cs, Blaze.LlmGateway.Api/appsettings.json]
 ---
 
