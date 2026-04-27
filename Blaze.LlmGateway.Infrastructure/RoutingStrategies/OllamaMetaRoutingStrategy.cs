@@ -22,6 +22,10 @@ public class OllamaMetaRoutingStrategy(
 {
     private static readonly string[] ValidDestinations = Enum.GetNames<RouteDestination>();
 
+    // Circuit breaker: once Ollama fails, skip subsequent calls for the cooldown window.
+    private static readonly TimeSpan CooldownDuration = TimeSpan.FromMinutes(5);
+    private DateTimeOffset? _circuitOpenedAt;
+
     private static readonly string SystemPrompt = $"""
         You are a request router. Based on the user's message, decide which AI provider should handle it.
         Respond with ONLY one of these exact words (no punctuation, no explanation):
@@ -35,6 +39,12 @@ public class OllamaMetaRoutingStrategy(
 
     public async Task<RouteDestination> ResolveAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default)
     {
+        // Circuit-breaker fast-path: if Ollama is in cooldown, skip directly to fallback.
+        if (_circuitOpenedAt is { } openedAt && DateTimeOffset.UtcNow - openedAt < CooldownDuration)
+        {
+            return await fallbackStrategy.ResolveAsync(messages, cancellationToken);
+        }
+
         try
         {
             var lastUserMessage = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "";
@@ -69,7 +79,12 @@ public class OllamaMetaRoutingStrategy(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Meta-router call failed. Falling back to keyword strategy.");
+            // Open the circuit; log once at warning, subsequent calls will silently fall back.
+            if (_circuitOpenedAt is null)
+            {
+                logger.LogWarning(ex, "Meta-router call failed — opening circuit for {Cooldown}; falling back to keyword strategy.", CooldownDuration);
+            }
+            _circuitOpenedAt = DateTimeOffset.UtcNow;
         }
 
         return await fallbackStrategy.ResolveAsync(messages, cancellationToken);
