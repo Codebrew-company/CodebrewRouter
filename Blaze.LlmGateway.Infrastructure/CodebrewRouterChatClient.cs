@@ -29,6 +29,7 @@ public sealed class CodebrewRouterChatClient(
     IChatClient innerClient,
     ITaskClassifier taskClassifier,
     IPromptCleaner promptCleaner,
+    Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter tokenCounter,
     IOptions<CodebrewRouterOptions> options,
     IOptions<LlmGatewayOptions> gatewayOptions,
     IModelAvailabilityRegistry availabilityRegistry,
@@ -47,7 +48,7 @@ public sealed class CodebrewRouterChatClient(
     {
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
         var cleanedMessages = await CleanMessagesAsync(messageList, cancellationToken);
-        var (taskType, providers) = await ResolveAsync(cleanedMessages, cancellationToken);
+        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, cancellationToken);
 
         for (var i = 0; i < providers.Length; i++)
         {
@@ -86,7 +87,7 @@ public sealed class CodebrewRouterChatClient(
     {
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
         var cleanedMessages = await CleanMessagesAsync(messageList, cancellationToken);
-        var (taskType, providers) = await ResolveAsync(cleanedMessages, cancellationToken);
+        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, cancellationToken);
 
         for (var i = 0; i < providers.Length; i++)
         {
@@ -223,12 +224,15 @@ public sealed class CodebrewRouterChatClient(
         return copy;
     }
 
-    private async Task<(TaskType TaskType, string[] Providers)> ResolveAsync(
+    private async Task<(TaskType TaskType, string[] Providers, int TokenCount)> ResolveAsync(
         IEnumerable<ChatMessage> messages,
         CancellationToken cancellationToken)
     {
+        var tokenCount = tokenCounter.CountTokens(messages);
+        logger.LogInformation("📏 codebrewRouter calculated prompt context size as {TokenCount} tokens", tokenCount);
+
         var taskType = await taskClassifier.ClassifyAsync(messages, cancellationToken);
-        logger.LogInformation("🧠 codebrewRouter classified task as {TaskType}", taskType);
+        logger.LogInformation("🧠 codebrewRouter classified task as {TaskType} (Context: {TokenCount} tokens)", taskType, tokenCount);
 
         var typeKey = taskType.ToString();
         var providers =
@@ -238,7 +242,7 @@ public sealed class CodebrewRouterChatClient(
 
         var configuredProviders = providers.Where(IsProviderConfigured).ToArray();
 
-        return (taskType, configuredProviders);
+        return (taskType, configuredProviders, tokenCount);
     }
 
     private bool IsProviderConfigured(string providerKey)

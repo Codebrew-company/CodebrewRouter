@@ -140,6 +140,9 @@ public static class InfrastructureServiceExtensions
             return router;
         });
 
+        // ── Token Counting ────────────────────────────────────────────────────────
+        services.AddSingleton<TokenCounting.ITokenCounter, TokenCounting.TiktokenTokenCounter>();
+
         // ── codebrewRouter virtual model ──────────────────────────────────────
 
         // Expose CodebrewRouterOptions from the nested LlmGatewayOptions property
@@ -188,6 +191,7 @@ public static class InfrastructureServiceExtensions
                 ?? (IChatClient)new UnavailableChatClient("No currently available backing provider is available for codebrewRouter."),
                 sp.GetRequiredService<ITaskClassifier>(),
                 sp.GetRequiredService<IPromptCleaner>(),
+                sp.GetRequiredService<TokenCounting.ITokenCounter>(),
                 sp.GetRequiredService<IOptions<CodebrewRouterOptions>>(),
                 sp.GetRequiredService<IOptions<LlmGatewayOptions>>(),
                 sp.GetRequiredService<IModelAvailabilityRegistry>(),

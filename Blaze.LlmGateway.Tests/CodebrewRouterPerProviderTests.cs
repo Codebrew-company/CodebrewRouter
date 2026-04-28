@@ -86,7 +86,8 @@ public class CodebrewRouterPerProviderTests
         var opts        = Options.Create(routerOptions ?? new CodebrewRouterOptions());
         var gatewayOpts = Options.Create(gatewayOptions ?? new LlmGatewayOptions());
         var logger      = new Mock<ILogger<CodebrewRouterChatClient>>().Object;
-        return new CodebrewRouterChatClient(innerClient, classifier, new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(), opts, gatewayOpts, availabilityRegistry ?? CreateAvailabilityRegistry(), serviceProvider, logger);
+        var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>().Object;
+        return new CodebrewRouterChatClient(innerClient, classifier, new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(), tokenCounter, opts, gatewayOpts, availabilityRegistry ?? CreateAvailabilityRegistry(), serviceProvider, logger);
     }
 
     private static IModelAvailabilityRegistry CreateAvailabilityRegistry(params (string Provider, bool Enabled, string? Error)[] providers)

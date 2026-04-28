@@ -9,6 +9,7 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0-preview.1.26215.2" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0-preview.1.26215.2" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
   </ItemGroup>

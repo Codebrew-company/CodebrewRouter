@@ -90,10 +90,12 @@ public class CodebrewRouterChatClientPromptCleanupTests
             .BuildServiceProvider();
 
         var inner = new Mock<IChatClient>().Object;
+        var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>().Object;
         var router = new CodebrewRouterChatClient(
             inner,
             classifier.Object,
             cleaner,
+            tokenCounter,
             Options.Create(new CodebrewRouterOptions()),
             Options.Create(AllProvidersConfigured()),
             AllAvailable(),
