@@ -4,6 +4,7 @@ using Azure.Identity;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
+using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
@@ -146,6 +147,29 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IOptions<CodebrewRouterOptions>>(sp =>
             Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.CodebrewRouter));
 
+        // Same trick for PromptCleanupOptions so GemmaPromptCleaner can receive it directly.
+        services.AddSingleton<IOptions<PromptCleanupOptions>>(sp =>
+            Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.PromptCleanup));
+
+        // Prompt cleaner: Gemma-backed when feature enabled AND OllamaLocal keyed client
+        // is registered; otherwise no-op. The cleaner is invoked by CodebrewRouterChatClient
+        // before classification and before the downstream LLM call.
+        services.AddSingleton<IPromptCleaner>(sp =>
+        {
+            var cleanupOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.PromptCleanup;
+            var ollamaLocal = sp.GetKeyedService<IChatClient>("OllamaLocal");
+
+            if (!cleanupOptions.Enabled || ollamaLocal is null)
+            {
+                return new NoopPromptCleaner();
+            }
+
+            return new GemmaPromptCleaner(
+                ollamaLocal,
+                sp.GetRequiredService<IOptions<PromptCleanupOptions>>(),
+                sp.GetRequiredService<ILogger<GemmaPromptCleaner>>());
+        });
+
         // Task classifier: Ollama-backed with keyword fallback (zero-latency on Ollama outage)
         services.AddSingleton<KeywordTaskClassifier>();
         services.AddSingleton<ITaskClassifier>(sp => new OllamaTaskClassifier(
@@ -163,6 +187,7 @@ public static class InfrastructureServiceExtensions
                     sp.GetRequiredService<IModelAvailabilityRegistry>().IsProviderAvailable("AzureFoundry"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available backing provider is available for codebrewRouter."),
                 sp.GetRequiredService<ITaskClassifier>(),
+                sp.GetRequiredService<IPromptCleaner>(),
                 sp.GetRequiredService<IOptions<CodebrewRouterOptions>>(),
                 sp.GetRequiredService<IOptions<LlmGatewayOptions>>(),
                 sp.GetRequiredService<IModelAvailabilityRegistry>(),

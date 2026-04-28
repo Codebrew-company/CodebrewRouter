@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
+using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,15 +16,19 @@ namespace Blaze.LlmGateway.Infrastructure;
 /// When a caller sends <c>model: "codebrewRouter"</c> the <see cref="ModelSelectionResolver"/>
 /// resolves to this client, which:
 /// <list type="number">
-///   <item>Classifies the incoming conversation into a <see cref="TaskType"/>.</item>
+///   <item>Optimizes the last user message via <see cref="IPromptCleaner"/> (gemma4:e4b).</item>
+///   <item>Classifies the (cleaned) conversation into a <see cref="TaskType"/>.</item>
 ///   <item>Looks up the ordered provider fallback chain from <see cref="CodebrewRouterOptions.FallbackRules"/>.</item>
-///   <item>Tries each provider in sequence; on any exception the next is attempted.</item>
+///   <item>Tries each provider in sequence with the cleaned messages; on any exception the next is attempted.</item>
 ///   <item>Falls back to <see cref="DelegatingChatClient.InnerClient"/> (AzureFoundry) when all providers fail.</item>
 /// </list>
+/// The cleaner runs once per request; the cleaned message list is shared by the classifier
+/// and every downstream provider attempt so the optimization benefit reaches the paid call.
 /// </summary>
 public sealed class CodebrewRouterChatClient(
     IChatClient innerClient,
     ITaskClassifier taskClassifier,
+    IPromptCleaner promptCleaner,
     IOptions<CodebrewRouterOptions> options,
     IOptions<LlmGatewayOptions> gatewayOptions,
     IModelAvailabilityRegistry availabilityRegistry,
@@ -41,7 +46,8 @@ public sealed class CodebrewRouterChatClient(
         CancellationToken cancellationToken = default)
     {
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
-        var (taskType, providers) = await ResolveAsync(messageList, cancellationToken);
+        var cleanedMessages = await CleanMessagesAsync(messageList, cancellationToken);
+        var (taskType, providers) = await ResolveAsync(cleanedMessages, cancellationToken);
 
         for (var i = 0; i < providers.Length; i++)
         {
@@ -57,7 +63,7 @@ public sealed class CodebrewRouterChatClient(
                 key, i + 1, providers.Length, taskType);
             try
             {
-                var response = await client.GetResponseAsync(messageList, options, cancellationToken);
+                var response = await client.GetResponseAsync(cleanedMessages, options, cancellationToken);
                 logger.LogInformation("✅ codebrewRouter succeeded with {Key} for {TaskType}", key, taskType);
                 return response;
             }
@@ -68,7 +74,7 @@ public sealed class CodebrewRouterChatClient(
         }
 
         logger.LogWarning("⚠️ codebrewRouter all providers exhausted for {TaskType} — using InnerClient", taskType);
-        return await InnerClient.GetResponseAsync(messageList, options, cancellationToken);
+        return await InnerClient.GetResponseAsync(cleanedMessages, options, cancellationToken);
     }
 
     // ── Streaming ─────────────────────────────────────────────────────────────
@@ -79,7 +85,8 @@ public sealed class CodebrewRouterChatClient(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
-        var (taskType, providers) = await ResolveAsync(messageList, cancellationToken);
+        var cleanedMessages = await CleanMessagesAsync(messageList, cancellationToken);
+        var (taskType, providers) = await ResolveAsync(cleanedMessages, cancellationToken);
 
         for (var i = 0; i < providers.Length; i++)
         {
@@ -94,10 +101,7 @@ public sealed class CodebrewRouterChatClient(
             logger.LogInformation("🎯 codebrewRouter streaming: trying {Key} (attempt {Attempt}/{Total}) for {TaskType}",
                 key, i + 1, providers.Length, taskType);
 
-            // TryGetFirstChunkAsync is a plain async method (not an iterator),
-            // so try/catch inside it is fully legal. It peeks at the first chunk
-            // to confirm the provider is reachable. If it fails, we try the next.
-            var result = await TryGetFirstChunkAsync(client, messageList, options, cancellationToken);
+            var result = await TryGetFirstChunkAsync(client, cleanedMessages, options, cancellationToken);
             if (!result.Success)
             {
                 logger.LogWarning("⚠️ codebrewRouter streaming provider {Key} failed before first chunk. Trying next.", key);
@@ -106,11 +110,8 @@ public sealed class CodebrewRouterChatClient(
 
             logger.LogInformation("✅ codebrewRouter streaming succeeded with {Key} for {TaskType}", key, taskType);
 
-            // Yield the first chunk that was already fetched to confirm connectivity.
             yield return result.FirstChunk;
 
-            // Stream the rest. Note: yield is outside try/catch (required by C# spec).
-            // Enumerator is guaranteed non-null when Success == true (see FirstChunkResult).
             var enumerator = result.Enumerator!;
             while (true)
             {
@@ -136,12 +137,8 @@ public sealed class CodebrewRouterChatClient(
             }
         }
 
-        // All providers failed — probe InnerClient before committing to its stream.
-        // This prevents raw System.ClientModel AggregateExceptions (e.g. FoundryLocal
-        // connection-refused on 127.0.0.1) from leaking when InnerClient is the same
-        // class of unavailable provider.
         logger.LogWarning("⚠️ codebrewRouter all streaming providers exhausted for {TaskType} — probing InnerClient", taskType);
-        var innerResult = await TryGetFirstChunkAsync(InnerClient, messageList, options, cancellationToken);
+        var innerResult = await TryGetFirstChunkAsync(InnerClient, cleanedMessages, options, cancellationToken);
         if (!innerResult.Success)
         {
             logger.LogError("❌ codebrewRouter InnerClient also failed for {TaskType} — all providers exhausted", taskType);
@@ -176,6 +173,55 @@ public sealed class CodebrewRouterChatClient(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a copy of <paramref name="messages"/> with the last <see cref="ChatRole.User"/>
+    /// message replaced by the cleaner-optimized text. If the cleaner returns the original
+    /// text (no-op cleaner, short prompt, validation failure, or open circuit) this returns
+    /// the input list unchanged.
+    /// </summary>
+    private async Task<IList<ChatMessage>> CleanMessagesAsync(
+        IList<ChatMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        // Find the last user message — that's the only one we rewrite.
+        int lastUserIdx = -1;
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role == ChatRole.User)
+            {
+                lastUserIdx = i;
+                break;
+            }
+        }
+
+        if (lastUserIdx < 0)
+            return messages;
+
+        var lastUser = messages[lastUserIdx];
+        var originalText = lastUser.Text;
+        if (string.IsNullOrEmpty(originalText))
+            return messages;
+
+        var cleaned = await promptCleaner.CleanAsync(originalText, cancellationToken);
+        if (ReferenceEquals(cleaned, originalText) || string.Equals(cleaned, originalText, StringComparison.Ordinal))
+            return messages;
+
+        // Build a shallow copy with the rewritten message swapped in. Preserve the
+        // original ChatRole, AuthorName, and any AdditionalProperties on the user message.
+        var rewritten = new ChatMessage(lastUser.Role, cleaned)
+        {
+            AuthorName = lastUser.AuthorName,
+            AdditionalProperties = lastUser.AdditionalProperties,
+            MessageId = lastUser.MessageId
+        };
+
+        var copy = new List<ChatMessage>(messages.Count);
+        for (int i = 0; i < messages.Count; i++)
+            copy.Add(i == lastUserIdx ? rewritten : messages[i]);
+
+        return copy;
+    }
 
     private async Task<(TaskType TaskType, string[] Providers)> ResolveAsync(
         IEnumerable<ChatMessage> messages,

@@ -69,6 +69,17 @@ New middleware must inherit from `DelegatingChatClient` — never implement `ICh
 - **Primary:** `OllamaMetaRoutingStrategy` — sends the prompt to a local Ollama "router" model that classifies which `RouteDestination` to use. Ollama is retained internally as the classifier brain only; it is not a selectable destination.
 - **Fallback:** `KeywordRoutingStrategy` — parses keywords from the last user message (e.g. "foundry local" → FoundryLocal, "github" → GithubModels, "azure" → AzureFoundry). Default destination: AzureFoundry.
 
+### codebrewRouter prompt-cleanup pre-stage
+
+When a request hits the `"CodebrewRouter"` virtual keyed client, `CodebrewRouterChatClient` runs a one-shot prompt-optimization step **before** classification and **before** the downstream provider call. The cleaner is `IPromptCleaner`:
+
+- `GemmaPromptCleaner` (default): uses the keyed `OllamaLocal` (gemma4:e4b) client to rewrite the **last user message** into a tighter, token-efficient form. The cleaned text replaces the last user message in the list passed to both the task classifier and every downstream provider attempt — so the optimization benefit reaches the paid LLM call.
+- `NoopPromptCleaner`: registered when `LlmGateway:PromptCleanup:Enabled = false` or `OllamaLocal` is unavailable; passes the prompt through unchanged.
+
+Failure semantics mirror `OllamaTaskClassifier`: any exception opens a circuit breaker (`PromptCleanupOptions.CooldownMinutes`, default 5 min) during which cleanup is skipped. Empty / inflated rewrites are also rejected and the original is forwarded. Short prompts (< `MinLengthChars`, default 80 chars) skip the cleaner entirely to avoid round-trip overhead.
+
+Configure via `LlmGateway:PromptCleanup` in `appsettings.json`.
+
 ### Providers (Keyed DI keys)
 
 Three selectable destinations registered as keyed `IChatClient` services: `"AzureFoundry"`, `"FoundryLocal"`, `"GithubModels"`. A fourth keyed client, `"OllamaLocal"`, is registered as an internal classifier brain for `OllamaMetaRoutingStrategy` / `OllamaTaskClassifier` but is **not** in `RouteDestination` and is **not** exposed via `/v1/models`. The `"CodebrewRouter"` virtual keyed client is a task-routing facade over the three real providers.
