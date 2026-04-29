@@ -3,6 +3,7 @@ using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
 using Blaze.LlmGateway.Api;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using System.Linq;
 using Microsoft.Extensions.AI;
@@ -87,7 +88,7 @@ public class CodebrewRouterPerProviderTests
         var gatewayOpts = Options.Create(gatewayOptions ?? new LlmGatewayOptions());
         var logger      = new Mock<ILogger<CodebrewRouterChatClient>>().Object;
         var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>().Object;
-        return new CodebrewRouterChatClient(innerClient, classifier, new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(), tokenCounter, opts, gatewayOpts, availabilityRegistry ?? CreateAvailabilityRegistry(), serviceProvider, logger);
+        return new CodebrewRouterChatClient(innerClient, classifier, new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(), new NoopContextCompactor(), tokenCounter, opts, gatewayOpts, availabilityRegistry ?? CreateAvailabilityRegistry(), serviceProvider, logger);
     }
 
     private static IModelAvailabilityRegistry CreateAvailabilityRegistry(params (string Provider, bool Enabled, string? Error)[] providers)

@@ -4,6 +4,7 @@ using Azure.Identity;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
@@ -154,6 +155,9 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IOptions<PromptCleanupOptions>>(sp =>
             Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.PromptCleanup));
 
+        services.AddSingleton<IOptions<ContextCompactionOptions>>(sp =>
+            Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.CodebrewRouter.ContextCompaction));
+
         // Prompt cleaner: Gemma-backed when feature enabled AND OllamaLocal keyed client
         // is registered; otherwise no-op. The cleaner is invoked by CodebrewRouterChatClient
         // before classification and before the downstream LLM call.
@@ -171,6 +175,21 @@ public static class InfrastructureServiceExtensions
                 ollamaLocal,
                 sp.GetRequiredService<IOptions<PromptCleanupOptions>>(),
                 sp.GetRequiredService<ILogger<GemmaPromptCleaner>>());
+        });
+
+        services.AddSingleton<IContextCompactor>(sp =>
+        {
+            var compactionOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.CodebrewRouter.ContextCompaction;
+            if (!compactionOptions.Enabled)
+            {
+                return new NoopContextCompactor();
+            }
+
+            return new ContextCompactor(
+                sp.GetKeyedService<IChatClient>("OllamaLocal"),
+                sp.GetRequiredService<TokenCounting.ITokenCounter>(),
+                sp.GetRequiredService<IOptions<ContextCompactionOptions>>(),
+                sp.GetRequiredService<ILogger<ContextCompactor>>());
         });
 
         // Task classifier: Ollama-backed with keyword fallback (zero-latency on Ollama outage)
@@ -191,6 +210,7 @@ public static class InfrastructureServiceExtensions
                 ?? (IChatClient)new UnavailableChatClient("No currently available backing provider is available for codebrewRouter."),
                 sp.GetRequiredService<ITaskClassifier>(),
                 sp.GetRequiredService<IPromptCleaner>(),
+                sp.GetRequiredService<IContextCompactor>(),
                 sp.GetRequiredService<TokenCounting.ITokenCounter>(),
                 sp.GetRequiredService<IOptions<CodebrewRouterOptions>>(),
                 sp.GetRequiredService<IOptions<LlmGatewayOptions>>(),

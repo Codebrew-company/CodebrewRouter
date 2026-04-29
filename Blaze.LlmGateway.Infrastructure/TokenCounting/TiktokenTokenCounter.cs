@@ -17,7 +17,7 @@ public sealed class TiktokenTokenCounter : ITokenCounter
 
     public TiktokenTokenCounter(string defaultModelId = "gpt-4o")
     {
-        _defaultModelId = defaultModelId ?? throw ;
+        _defaultModelId = defaultModelId ?? throw new ArgumentNullException(nameof(defaultModelId));
     }
 
     public int CountTokens(IEnumerable<ChatMessage> messages, string? modelId = null)

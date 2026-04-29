@@ -26,6 +26,8 @@ public class AzureFoundryOptions
     public string Model { get; set; } = "gpt-4o";
     /// <summary>Optional. If absent, DefaultAzureCredential is used.</summary>
     public string? ApiKey { get; set; }
+    public int MaxContextTokens { get; set; } = 128000;
+    public int ReservedOutputTokens { get; set; } = 4096;
 }
 
 public class FoundryLocalOptions
@@ -34,12 +36,16 @@ public class FoundryLocalOptions
     public string Model { get; set; } = "Phi-4-mini-instruct-cuda-gpu:5";
     /// <summary>Foundry Local uses "notneeded" as the API key.</summary>
     public string ApiKey { get; set; } = "notneeded";
+    public int MaxContextTokens { get; set; } = 128000;
+    public int ReservedOutputTokens { get; set; } = 4096;
 }
 
 public class OllamaLocalOptions
 {
     public string BaseUrl { get; set; } = "http://192.168.16.12:11434";
     public string Model { get; set; } = "gemma4:e4b";
+    public int MaxContextTokens { get; set; } = 32768;
+    public int ReservedOutputTokens { get; set; } = 2048;
 }
 
 public class GithubModelsOptions
@@ -48,6 +54,8 @@ public class GithubModelsOptions
     public string Model { get; set; } = "gpt-4o-mini";
     /// <summary>GitHub Models API key (personal access token with model access).</summary>
     public string? ApiKey { get; set; }
+    public int MaxContextTokens { get; set; } = 128000;
+    public int ReservedOutputTokens { get; set; } = 4096;
 }
 
 public class RoutingOptions

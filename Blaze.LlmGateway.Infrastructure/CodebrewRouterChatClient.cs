@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
@@ -29,6 +30,7 @@ public sealed class CodebrewRouterChatClient(
     IChatClient innerClient,
     ITaskClassifier taskClassifier,
     IPromptCleaner promptCleaner,
+    IContextCompactor contextCompactor,
     Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter tokenCounter,
     IOptions<CodebrewRouterOptions> options,
     IOptions<LlmGatewayOptions> gatewayOptions,
@@ -60,11 +62,17 @@ public sealed class CodebrewRouterChatClient(
                 continue;
             }
 
+            var providerMessages = await PrepareMessagesForProviderAsync(key, cleanedMessages, options, cancellationToken);
+            if (providerMessages is null)
+            {
+                continue;
+            }
+
             logger.LogInformation("🎯 codebrewRouter trying {Key} (attempt {Attempt}/{Total}) for {TaskType}",
                 key, i + 1, providers.Length, taskType);
             try
             {
-                var response = await client.GetResponseAsync(cleanedMessages, options, cancellationToken);
+                var response = await client.GetResponseAsync(providerMessages, options, cancellationToken);
                 logger.LogInformation("✅ codebrewRouter succeeded with {Key} for {TaskType}", key, taskType);
                 return response;
             }
@@ -75,7 +83,9 @@ public sealed class CodebrewRouterChatClient(
         }
 
         logger.LogWarning("⚠️ codebrewRouter all providers exhausted for {TaskType} — using InnerClient", taskType);
-        return await InnerClient.GetResponseAsync(cleanedMessages, options, cancellationToken);
+        var innerMessages = await PrepareMessagesForProviderAsync("AzureFoundry", cleanedMessages, options, cancellationToken)
+            ?? cleanedMessages;
+        return await InnerClient.GetResponseAsync(innerMessages, options, cancellationToken);
     }
 
     // ── Streaming ─────────────────────────────────────────────────────────────
@@ -99,10 +109,16 @@ public sealed class CodebrewRouterChatClient(
                 continue;
             }
 
+            var providerMessages = await PrepareMessagesForProviderAsync(key, cleanedMessages, options, cancellationToken);
+            if (providerMessages is null)
+            {
+                continue;
+            }
+
             logger.LogInformation("🎯 codebrewRouter streaming: trying {Key} (attempt {Attempt}/{Total}) for {TaskType}",
                 key, i + 1, providers.Length, taskType);
 
-            var result = await TryGetFirstChunkAsync(client, cleanedMessages, options, cancellationToken);
+            var result = await TryGetFirstChunkAsync(client, providerMessages, options, cancellationToken);
             if (!result.Success)
             {
                 logger.LogWarning("⚠️ codebrewRouter streaming provider {Key} failed before first chunk. Trying next.", key);
@@ -139,7 +155,9 @@ public sealed class CodebrewRouterChatClient(
         }
 
         logger.LogWarning("⚠️ codebrewRouter all streaming providers exhausted for {TaskType} — probing InnerClient", taskType);
-        var innerResult = await TryGetFirstChunkAsync(InnerClient, cleanedMessages, options, cancellationToken);
+        var innerMessages = await PrepareMessagesForProviderAsync("AzureFoundry", cleanedMessages, options, cancellationToken)
+            ?? cleanedMessages;
+        var innerResult = await TryGetFirstChunkAsync(InnerClient, innerMessages, options, cancellationToken);
         if (!innerResult.Success)
         {
             logger.LogError("❌ codebrewRouter InnerClient also failed for {TaskType} — all providers exhausted", taskType);
@@ -245,18 +263,107 @@ public sealed class CodebrewRouterChatClient(
         return (taskType, configuredProviders, tokenCount);
     }
 
+    private async Task<IList<ChatMessage>?> PrepareMessagesForProviderAsync(
+        string providerKey,
+        IList<ChatMessage> messages,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetProviderContextBudget(providerKey, out var contextBudget))
+        {
+            return messages;
+        }
+
+        var currentTokenCount = tokenCounter.CountTokens(messages, contextBudget.ModelId);
+        var inputBudget = CalculateInputBudget(contextBudget, options);
+        if (currentTokenCount <= inputBudget)
+        {
+            return messages;
+        }
+
+        logger.LogInformation(
+            "⚠️ codebrewRouter provider {ProviderKey} cannot fit current context ({CurrentTokens}/{InputBudget} input tokens)",
+            providerKey,
+            currentTokenCount,
+            inputBudget);
+
+        var compactionRatio = Math.Clamp(Options.ContextCompaction.TargetBudgetRatio, 0.1d, 1.0d);
+        var compactionTarget = Math.Max(1, (int)Math.Floor(inputBudget * compactionRatio));
+        var compactionResult = await contextCompactor.CompactAsync(messages, compactionTarget, contextBudget.ModelId, cancellationToken);
+        if (compactionResult.WasCompacted && compactionResult.CompactedTokenCount <= inputBudget)
+        {
+            logger.LogInformation(
+                "✅ codebrewRouter compacted context for {ProviderKey} ({OriginalTokens} -> {CompactedTokens})",
+                providerKey,
+                compactionResult.OriginalTokenCount,
+                compactionResult.CompactedTokenCount);
+            return compactionResult.Messages;
+        }
+
+        logger.LogWarning(
+            "⚠️ codebrewRouter skipping {ProviderKey}; context still too large after compaction attempt ({CurrentTokens}/{InputBudget})",
+            providerKey,
+            compactionResult.WasCompacted ? compactionResult.CompactedTokenCount : currentTokenCount,
+            inputBudget);
+        return null;
+    }
+
     private bool IsProviderConfigured(string providerKey)
     {
         var providers = GatewayOptions.Providers;
 
         return providerKey switch
         {
-            "AzureFoundry" => HasValue(providers.AzureFoundry.Endpoint) && HasValue(providers.AzureFoundry.Model) && availabilityRegistry.IsProviderAvailable("AzureFoundry"),
+            "AzureFoundry" => HasValue(providers.AzureFoundry.Model) &&
+                              (HasValue(providers.AzureFoundry.ResponsesEndpoint) || HasValue(providers.AzureFoundry.Endpoint)) &&
+                              availabilityRegistry.IsProviderAvailable("AzureFoundry"),
             "FoundryLocal" => HasValue(providers.FoundryLocal.Endpoint) && HasValue(providers.FoundryLocal.Model) && availabilityRegistry.IsProviderAvailable("FoundryLocal"),
             "GithubModels" => HasValue(providers.GithubModels.Endpoint) && HasValue(providers.GithubModels.Model) && HasValue(providers.GithubModels.ApiKey) && availabilityRegistry.IsProviderAvailable("GithubModels"),
             "OllamaLocal" => HasValue(providers.OllamaLocal.BaseUrl) && HasValue(providers.OllamaLocal.Model) && availabilityRegistry.IsProviderAvailable("OllamaLocal"),
             _ => true
         };
+    }
+
+    private bool TryGetProviderContextBudget(string providerKey, out ProviderContextBudget budget)
+    {
+        var providers = GatewayOptions.Providers;
+
+        switch (providerKey)
+        {
+            case "AzureFoundry":
+                budget = new ProviderContextBudget(
+                    providers.AzureFoundry.Model,
+                    providers.AzureFoundry.MaxContextTokens,
+                    providers.AzureFoundry.ReservedOutputTokens);
+                return HasValue(providers.AzureFoundry.Model) && providers.AzureFoundry.MaxContextTokens > 0;
+            case "FoundryLocal":
+                budget = new ProviderContextBudget(
+                    providers.FoundryLocal.Model,
+                    providers.FoundryLocal.MaxContextTokens,
+                    providers.FoundryLocal.ReservedOutputTokens);
+                return HasValue(providers.FoundryLocal.Model) && providers.FoundryLocal.MaxContextTokens > 0;
+            case "GithubModels":
+                budget = new ProviderContextBudget(
+                    providers.GithubModels.Model,
+                    providers.GithubModels.MaxContextTokens,
+                    providers.GithubModels.ReservedOutputTokens);
+                return HasValue(providers.GithubModels.Model) && providers.GithubModels.MaxContextTokens > 0;
+            case "OllamaLocal":
+                budget = new ProviderContextBudget(
+                    providers.OllamaLocal.Model,
+                    providers.OllamaLocal.MaxContextTokens,
+                    providers.OllamaLocal.ReservedOutputTokens);
+                return HasValue(providers.OllamaLocal.Model) && providers.OllamaLocal.MaxContextTokens > 0;
+            default:
+                budget = default;
+                return false;
+        }
+    }
+
+    private static int CalculateInputBudget(ProviderContextBudget budget, ChatOptions? options)
+    {
+        var reservedOutputTokens = Math.Max(0, options?.MaxOutputTokens ?? budget.ReservedOutputTokens);
+        return Math.Max(1, budget.MaxContextTokens - reservedOutputTokens);
     }
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
@@ -299,4 +406,9 @@ public sealed class CodebrewRouterChatClient(
     {
         public static readonly FirstChunkResult Failed = new(false, default!, null);
     }
+
+    private readonly record struct ProviderContextBudget(
+        string ModelId,
+        int MaxContextTokens,
+        int ReservedOutputTokens);
 }

@@ -8,6 +8,7 @@ using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
@@ -95,6 +96,7 @@ public class CodebrewRouterChatClientPromptCleanupTests
             inner,
             classifier.Object,
             cleaner,
+            new NoopContextCompactor(),
             tokenCounter,
             Options.Create(new CodebrewRouterOptions()),
             Options.Create(AllProvidersConfigured()),

@@ -9,6 +9,7 @@ using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,13 +66,24 @@ public class CodebrewRouterChatClientTests
         IServiceProvider serviceProvider,
         CodebrewRouterOptions? options = null,
         LlmGatewayOptions? gatewayOptions = null,
-        IModelAvailabilityRegistry? availabilityRegistry = null)
+        IModelAvailabilityRegistry? availabilityRegistry = null,
+        Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter? tokenCounter = null,
+        IContextCompactor? contextCompactor = null)
     {
         var opts = Options.Create(options ?? new CodebrewRouterOptions());
         var gatewayOpts = Options.Create(gatewayOptions ?? new LlmGatewayOptions());
         var logger = new Mock<ILogger<CodebrewRouterChatClient>>().Object;
-        var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>().Object;
-        return new CodebrewRouterChatClient(innerClient, classifier, new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(), tokenCounter, opts, gatewayOpts, availabilityRegistry ?? CreateAvailabilityRegistry(), serviceProvider, logger);
+        return new CodebrewRouterChatClient(
+            innerClient,
+            classifier,
+            new Blaze.LlmGateway.Infrastructure.PromptCleaning.NoopPromptCleaner(),
+            contextCompactor ?? new NoopContextCompactor(),
+            tokenCounter ?? new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>().Object,
+            opts,
+            gatewayOpts,
+            availabilityRegistry ?? CreateAvailabilityRegistry(),
+            serviceProvider,
+            logger);
     }
 
     private static IModelAvailabilityRegistry CreateAvailabilityRegistry(params (string Provider, bool Enabled, string? Error)[] providers)
@@ -334,6 +346,113 @@ public class CodebrewRouterChatClientTests
         var result = await router.GetResponseAsync(UserMessages("write code"));
 
         Assert.Equal("Inner", result.Text);
+    }
+
+    [Fact]
+    public async Task SkipsProvider_WhenContextExceedsProviderBudget_AndUsesNextProvider()
+    {
+        var constrained = ClientReturning("Too small");
+        var larger = ClientReturning("Fits");
+
+        var sp = new ServiceCollection()
+            .AddKeyedSingleton<IChatClient>("AzureFoundry", constrained.Object)
+            .AddKeyedSingleton<IChatClient>("FoundryLocal", larger.Object)
+            .BuildServiceProvider();
+
+        var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>();
+        tokenCounter
+            .Setup(counter => counter.CountTokens(It.IsAny<IEnumerable<ChatMessage>>(), "tiny-model"))
+            .Returns(300);
+        tokenCounter
+            .Setup(counter => counter.CountTokens(It.IsAny<IEnumerable<ChatMessage>>(), "roomy-model"))
+            .Returns(300);
+        tokenCounter
+            .Setup(counter => counter.CountTokens(It.IsAny<IEnumerable<ChatMessage>>(), It.Is<string?>(modelId => modelId == null)))
+            .Returns(300);
+
+        var gatewayOptions = new LlmGatewayOptions
+        {
+            Providers =
+            {
+                AzureFoundry = { Endpoint = "https://x", Model = "tiny-model", ApiKey = "k", MaxContextTokens = 256, ReservedOutputTokens = 32 },
+                FoundryLocal = { Endpoint = "http://localhost", Model = "roomy-model", MaxContextTokens = 1024, ReservedOutputTokens = 32 }
+            }
+        };
+        var routerOptions = new CodebrewRouterOptions
+        {
+            FallbackRules = new(StringComparer.OrdinalIgnoreCase) { ["General"] = ["AzureFoundry", "FoundryLocal"] }
+        };
+
+        var router = CreateRouter(
+            new Mock<IChatClient>().Object,
+            ClassifierFor(TaskType.General).Object,
+            sp,
+            routerOptions,
+            gatewayOptions,
+            tokenCounter: tokenCounter.Object);
+
+        var result = await router.GetResponseAsync(UserMessages("hello"));
+
+        Assert.Equal("Fits", result.Text);
+        constrained.Verify(c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()), Times.Never);
+        larger.Verify(c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UsesCompactedMessages_WhenProviderNeedsReduction()
+    {
+        var compactedMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "Conversation summary of earlier turns:\nKeep constraints."),
+            new(ChatRole.User, "latest request")
+        };
+        List<ChatMessage>? providerSawMessages = null;
+
+        var provider = new Mock<IChatClient>();
+        provider
+            .Setup(c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((messages, _, _) => providerSawMessages = messages.ToList())
+            .ReturnsAsync(TextResponse("Compacted"));
+
+        var sp = new ServiceCollection()
+            .AddKeyedSingleton<IChatClient>("AzureFoundry", provider.Object)
+            .BuildServiceProvider();
+
+        var tokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>();
+        tokenCounter
+            .Setup(counter => counter.CountTokens(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<string?>()))
+            .Returns<IEnumerable<ChatMessage>, string?>((messages, _) => messages.Count() > 2 ? 2000 : 200);
+
+        var compactor = new Mock<IContextCompactor>();
+        compactor
+            .Setup(c => c.CompactAsync(It.IsAny<IList<ChatMessage>>(), It.IsAny<int>(), "gpt-fit", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ContextCompactionResult(compactedMessages, 2000, 200, true, "summary+prune"));
+
+        var gatewayOptions = new LlmGatewayOptions
+        {
+            Providers =
+            {
+                AzureFoundry = { Endpoint = "https://x", Model = "gpt-fit", ApiKey = "k", MaxContextTokens = 512, ReservedOutputTokens = 64 }
+            }
+        };
+
+        var router = CreateRouter(
+            new Mock<IChatClient>().Object,
+            ClassifierFor(TaskType.General).Object,
+            sp,
+            gatewayOptions: gatewayOptions,
+            tokenCounter: tokenCounter.Object,
+            contextCompactor: compactor.Object);
+
+        var result = await router.GetResponseAsync([
+            new ChatMessage(ChatRole.System, "you are helpful"),
+            new ChatMessage(ChatRole.User, "older context"),
+            new ChatMessage(ChatRole.User, "latest request")
+        ]);
+
+        Assert.Equal("Compacted", result.Text);
+        Assert.NotNull(providerSawMessages);
+        Assert.Equal(compactedMessages, providerSawMessages);
     }
 
     // ── Streaming: basic success ───────────────────────────────────────────────
