@@ -6,6 +6,7 @@ using System.ClientModel;
 using System.Text.Json;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.ContextHandling;
 
 namespace Blaze.LlmGateway.Api;
 
@@ -335,6 +336,28 @@ public static class ChatCompletionsEndpoint
 
     private static IResult CreateProviderErrorResult(string model, Exception? exception)
     {
+        // Context overflow — no provider's window is large enough for this prompt.
+        if (exception is ContextOverflowException coe)
+        {
+            return Results.Json(
+                new
+                {
+                    error = new
+                    {
+                        message = $"The prompt requires {coe.RequiredTokens} tokens but the largest available " +
+                                  $"context window could only accommodate {coe.Budget} tokens. " +
+                                  $"Please reduce the prompt length.",
+                        type    = "context_length_exceeded",
+                        code    = "context_length_exceeded",
+                        param   = (string?)null,
+                        required_tokens        = coe.RequiredTokens,
+                        largest_window_budget  = coe.Budget,
+                        attempted_destinations = coe.AttemptedDestinations,
+                    }
+                },
+                statusCode: StatusCodes.Status413RequestEntityTooLarge);
+        }
+
         var statusCode = exception is ClientResultException { Status: 404 }
             ? StatusCodes.Status404NotFound
             : exception is InvalidOperationException invalidOperation &&
