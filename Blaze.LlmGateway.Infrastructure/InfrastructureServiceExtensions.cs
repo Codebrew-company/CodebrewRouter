@@ -175,7 +175,11 @@ public static class InfrastructureServiceExtensions
             // To re-enable: uncomment McpConnectionManager registration in Program.cs
             // and uncomment the McpToolDelegatingClient wrapper below
 
-            IChatClient router = new LlmRoutingChatClient(fallback, sp, strategy, failoverStrategy, availabilityRegistry, routerLogger);
+            IChatClient router = new LlmRoutingChatClient(
+                fallback, sp, strategy, failoverStrategy, availabilityRegistry,
+                sp.GetRequiredService<IOptions<LlmGatewayOptions>>(),
+                sp.GetRequiredService<IOptions<ContextSizingOptions>>(),
+                routerLogger);
             // Wrap with MCP layer if available:
             // var mcpManager = sp.GetRequiredService<McpConnectionManager>();
             // var mcpLogger = sp.GetRequiredService<ILogger<McpToolDelegatingClient>>();
