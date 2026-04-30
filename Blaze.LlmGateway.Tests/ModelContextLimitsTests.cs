@@ -26,6 +26,7 @@ public class ModelContextLimitsTests
     [Theory]
     [InlineData("unknown-model-xyz")]
     [InlineData("")]
+    [InlineData("   ")]
     public void Lookup_UnknownModel_ReturnsNulls(string modelId)
     {
         var (ctx, maxOut) = ModelContextLimits.Lookup(modelId);
