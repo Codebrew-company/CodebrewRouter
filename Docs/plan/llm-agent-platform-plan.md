@@ -9,7 +9,7 @@
 
 Evolve Blaze.LlmGateway from a routed `Microsoft.Extensions.AI` chat gateway into an internal-LAN LLM engine that can power chatbots and personal-agent projects. The target platform should combine:
 
-- Local inference endpoints on the LAN: Ollama, Foundry Local, LM Studio, and llama.cpp, including Gemma 4 family models.
+- Local inference endpoints on the LAN: Ollama, Foundry Local, and LM Studio, including Gemma 4 family models.
 - Online/cloud providers when policy allows: Azure Foundry, Claude, Codex/OpenAI, Gemini, GitHub Copilot, GitHub Models, OpenRouter.
 - Agent/runtime integrations above the inference layer: Microsoft Agent Framework, Azure Foundry hosted/local agents, and Copilot ecosystem consumers.
 - Northbound API compatibility for clients like OpenCode, Copilot CLI BYOM, Claude Code, Codex, and internal apps.
@@ -43,7 +43,7 @@ Main gaps versus the target:
 - API contract is too thin for serious BYOM/client compatibility.
 - MCP tool plane is scaffold-only.
 - No circuit breaker, provider health model, or streaming failover policy.
-- No first-class LM Studio or llama.cpp support.
+- No first-class LM Studio support.
 - No Copilot SDK or Microsoft Agent Framework integration layer yet.
 
 ## Confirmed planning choices
@@ -51,7 +51,7 @@ Main gaps versus the target:
 - **Product boundary:** full gateway and agent runtime in one primary API host.
 - **Phase 1 client surfaces:** OpenAI-compatible Chat Completions API, Copilot CLI BYOM usage, Copilot SDK integration sample, Microsoft Agent Framework integration, Azure Foundry hosted/local agent integration.
 - **Session model:** durable persisted sessions first.
-- **Local runtimes to prioritize first:** Ollama, Foundry Local, LM Studio, llama.cpp server.
+- **Local runtimes to prioritize first:** Ollama, Foundry Local, and LM Studio.
 - **Cloud escalation policy:** local-first with explicit allow rules for cloud.
 
 ## Planning principles
@@ -171,7 +171,7 @@ Goal: make the existing gateway safe as the platform core.
 Goal: support more providers and local runtimes without architectural sprawl.
 
 - Add config-driven provider descriptors and model capability metadata.
-- Support LM Studio and llama.cpp as first-class local endpoints.
+- Support LM Studio as a first-class local endpoint.
 - Model Gemma 4 variants as catalog entries, not enum values.
 - Add LAN-locality policy and cloud escalation policy.
 - Define cloud providers as explicit allow-listed capability routes, not the default path.
@@ -230,7 +230,7 @@ Goal: make the platform governable on an internal LAN.
    - Decide storage model, retention, recovery semantics, and correlation identifiers.
 
 5. **Local runtime compatibility ADR**
-   - Treat LM Studio and llama.cpp as OpenAI-compatible endpoints or add specialized adapters?
+   - Treat LM Studio as an OpenAI-compatible endpoint or add a specialized adapter?
 
 6. **Azure Foundry agents ADR**
    - Route hosted agents through the same execution path, or expose them as a distinct agent abstraction?
