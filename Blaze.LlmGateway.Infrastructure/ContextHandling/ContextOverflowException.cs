@@ -1,4 +1,3 @@
-// Blaze.LlmGateway.Infrastructure/ContextHandling/ContextOverflowException.cs
 namespace Blaze.LlmGateway.Infrastructure.ContextHandling;
 
 /// <summary>
@@ -27,6 +26,7 @@ public sealed class ContextOverflowException : Exception
         IReadOnlyList<string> attemptedDestinations)
         : base($"Context overflow for model '{modelId}': {requiredTokens} tokens required but budget is {budget}.")
     {
+        ArgumentNullException.ThrowIfNull(attemptedDestinations);
         ModelId = modelId;
         RequiredTokens = requiredTokens;
         Budget = budget;
