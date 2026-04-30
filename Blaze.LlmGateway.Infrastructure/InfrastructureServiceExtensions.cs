@@ -115,6 +115,26 @@ public static class InfrastructureServiceExtensions
                 .Build();
         });
 
+        // LmStudio — local OpenAI-compatible endpoint exposed by LM Studio at /v1.
+        services.AddKeyedSingleton<IChatClient>("LmStudio", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.LmStudio;
+            var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+            var compactor     = sp.GetRequiredService<IContextCompactor>();
+            var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
+            var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+            var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
+            var client = new OpenAIClient(
+                new ApiKeyCredential(apiKey),
+                new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+            return client.GetChatClient(opts.Model).AsIChatClient()
+                .AsBuilder()
+                .UseFunctionInvocation()
+                .UseContextSizing(tokenCounter, compactor, sizingOptions,
+                    opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
+                .Build();
+        });
+
         return services;
     }
 
@@ -165,6 +185,7 @@ public static class InfrastructureServiceExtensions
                 GetConfiguredKeyedClient(sp, "GithubModels", IsGithubModelsConfigured(providerOptions.GithubModels) && availabilityRegistry.IsProviderAvailable("GithubModels"))
                 ?? GetConfiguredKeyedClient(sp, "AzureFoundry", IsAzureFoundryConfigured(providerOptions.AzureFoundry) && availabilityRegistry.IsProviderAvailable("AzureFoundry"))
                 ?? GetConfiguredKeyedClient(sp, "FoundryLocal", IsFoundryLocalConfigured(providerOptions.FoundryLocal) && availabilityRegistry.IsProviderAvailable("FoundryLocal"))
+                ?? GetConfiguredKeyedClient(sp, "LmStudio", IsLmStudioConfigured(providerOptions.LmStudio) && availabilityRegistry.IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
              
             var strategy = sp.GetRequiredService<IRoutingStrategy>();
@@ -284,6 +305,9 @@ public static class InfrastructureServiceExtensions
 
     private static bool IsGithubModelsConfigured(GithubModelsOptions options)
         => HasValue(options.Endpoint) && HasValue(options.Model) && HasValue(options.ApiKey);
+
+    private static bool IsLmStudioConfigured(LmStudioOptions options)
+        => HasValue(options.Endpoint) && HasValue(options.Model);
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
 }

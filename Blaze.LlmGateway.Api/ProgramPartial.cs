@@ -70,6 +70,16 @@ public static class LiteLlmEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithMetadata(new EndpointNameMetadata("list-models"));
 
+        app.MapGet("/v1/models/diagnostics", (ModelAvailabilityRegistry registry) =>
+            ModelsEndpoint.HandleDiagnosticsAsync(registry))
+        .WithName("ListModelDiagnostics")
+        .WithTags(DiscoveryTag)
+        .WithSummary("List model connectivity diagnostics")
+        .WithDescription("Returns all configured models and providers, including unavailable entries with the last probe error.")
+        .Produces<ModelDiagnosticsResponse>(StatusCodes.Status200OK, "application/json")
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithMetadata(new EndpointNameMetadata("list-model-diagnostics"));
+
         app.MapGet("/v1/models/codebrewRouter", (
             IModelCatalog modelCatalog,
             IModelAvailabilityRegistry availabilityRegistry,

@@ -100,6 +100,79 @@ public sealed class FoundryLocalProviderShapeTests
         Assert.DoesNotContain("/openai/deployments", path, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task LmStudioChatClient_UsesOpenAiCompatibleRequestPath()
+    {
+        using var listener = new HttpListener();
+        var port = GetFreePort();
+        var prefix = $"http://127.0.0.1:{port}/";
+        listener.Prefixes.Add(prefix);
+        listener.Start();
+
+        var capturedPath = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var ctx = await listener.GetContextAsync();
+                capturedPath.TrySetResult(ctx.Request.Url!.AbsolutePath);
+
+                ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+                ctx.Response.ContentType = "application/json";
+                var body = """
+                    {"id":"x","object":"chat.completion","created":1,"model":"local-model","choices":[
+                      {"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+                     "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+                    """;
+                var buffer = Encoding.UTF8.GetBytes(body);
+                ctx.Response.ContentLength64 = buffer.Length;
+                await ctx.Response.OutputStream.WriteAsync(buffer);
+                ctx.Response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                capturedPath.TrySetException(ex);
+            }
+        });
+
+        var endpoint = $"http://127.0.0.1:{port}/v1";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LlmGateway:Providers:LmStudio:Endpoint"] = endpoint,
+                ["LlmGateway:Providers:LmStudio:Model"] = "local-model",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(config);
+        services.Configure<LlmGatewayOptions>(config.GetSection("LlmGateway"));
+        services.AddLogging();
+        services.AddLlmProviders();
+        services.AddSingleton(new Mock<ITokenCounter>().Object);
+        services.AddSingleton(new Mock<IContextCompactor>().Object);
+        services.AddSingleton(Options.Create(new ContextSizingOptions()));
+
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredKeyedService<IChatClient>("LmStudio");
+
+        try
+        {
+            await client.GetResponseAsync(
+                [new ChatMessage(ChatRole.User, "ping")],
+                new ChatOptions { MaxOutputTokens = 1 },
+                CancellationToken.None);
+        }
+        catch
+        {
+        }
+
+        var path = await capturedPath.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("/v1/chat/completions", path);
+        Assert.DoesNotContain("/openai/deployments", path, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int GetFreePort()
     {
         var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);

@@ -32,13 +32,19 @@ public sealed class ModelSelectionResolver(
         if (string.Equals(model.Provider, "OllamaLocal", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(model.Endpoint))
         {
+            var configuredOllama = gatewayOptions.Value.Providers.OllamaLocal;
+            if (string.Equals(model.Id, configuredOllama.Model, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogDebug("Resolving configured Ollama keyed client for model {ModelId}", modelId);
+                return serviceProvider.GetKeyedService<IChatClient>(model.Provider);
+            }
+
             logger.LogDebug("Resolving dynamic Ollama client for model {ModelId}", modelId);
 
             // Resolve context window: curated table → provider config fallback
-            var ollamaOpts = gatewayOptions.Value.Providers.OllamaLocal;
             var (curatedWindow, _) = ModelContextLimits.Lookup(modelId);
-            var contextWindow  = curatedWindow ?? ollamaOpts.MaxContextTokens;
-            var reservedOutput = ollamaOpts.ReservedOutputTokens;
+            var contextWindow  = curatedWindow ?? configuredOllama.MaxContextTokens;
+            var reservedOutput = configuredOllama.ReservedOutputTokens;
 
             return ((IChatClient)new OllamaApiClient(new Uri(model.Endpoint), model.Id))
                 .AsBuilder()

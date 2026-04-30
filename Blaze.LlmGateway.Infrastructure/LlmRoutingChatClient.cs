@@ -330,6 +330,7 @@ public class LlmRoutingChatClient : DelegatingChatClient
             "FoundryLocal"  => (providers.FoundryLocal.MaxContextTokens,  providers.FoundryLocal.ReservedOutputTokens),
             "OllamaLocal"   => (providers.OllamaLocal.MaxContextTokens,   providers.OllamaLocal.ReservedOutputTokens),
             "GithubModels"  => (providers.GithubModels.MaxContextTokens,  providers.GithubModels.ReservedOutputTokens),
+            "LmStudio"      => (providers.LmStudio.MaxContextTokens,      providers.LmStudio.ReservedOutputTokens),
             _ => (int.MaxValue, 0)   // unknown → optimistic
         };
         var reserved = options?.MaxOutputTokens ?? reservedOutput;

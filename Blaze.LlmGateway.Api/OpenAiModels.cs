@@ -129,6 +129,31 @@ public record ModelInfo(
     bool Enabled = true,
     string? ErrorMessage = null);
 
+/// <summary>Full diagnostics for configured model/provider connectivity.</summary>
+public record ModelDiagnosticsResponse(
+    string Status,
+    DateTimeOffset CheckedAt,
+    IList<ModelDiagnosticsInfo> Models,
+    IList<ProviderDiagnosticsInfo> Providers);
+
+/// <summary>Connectivity diagnostics for a concrete model.</summary>
+public record ModelDiagnosticsInfo(
+    string Id,
+    string Provider,
+    string? OwnedBy,
+    string? Source,
+    string? Endpoint,
+    bool Enabled,
+    string? ErrorMessage,
+    DateTimeOffset? LastCheckedUtc);
+
+/// <summary>Connectivity diagnostics for a provider.</summary>
+public record ProviderDiagnosticsInfo(
+    string Provider,
+    bool Enabled,
+    string? ErrorMessage,
+    DateTimeOffset LastCheckedUtc);
+
 /// <summary>Detailed model information for the CodebrewRouter virtual model.</summary>
 public record CodebrewRouterModelsResponse(
     string Id,

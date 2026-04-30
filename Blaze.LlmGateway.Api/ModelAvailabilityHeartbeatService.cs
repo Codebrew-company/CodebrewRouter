@@ -124,8 +124,18 @@ public sealed class ModelAvailabilityHeartbeatService(
             models,
             providers,
             cancellationToken);
+        await ProbeChatProviderAsync(
+            providerKey: "LmStudio",
+            modelId: _options.Providers.LmStudio.Model,
+            endpoint: _options.Providers.LmStudio.Endpoint,
+            ownedBy: "lmstudio",
+            isConfigured: IsLmStudioConfigured(_options.Providers.LmStudio),
+            checkedAt,
+            models,
+            providers,
+            cancellationToken);
 
-        AddCodebrewRouterModel(models, checkedAt);
+        AddCodebrewRouterModel(models, providers, checkedAt);
         registry.UpdateSnapshot(models, providers);
 
         var enabledModels = models.Count(model => model.Enabled);
@@ -177,8 +187,17 @@ public sealed class ModelAvailabilityHeartbeatService(
             _options.Providers.OllamaLocal.BaseUrl,
             IsOllamaLocalConfigured(_options.Providers.OllamaLocal),
             checkedAt);
+        AddConfiguredModel(
+            models,
+            providers,
+            "LmStudio",
+            _options.Providers.LmStudio.Model,
+            "lmstudio",
+            _options.Providers.LmStudio.Endpoint,
+            IsLmStudioConfigured(_options.Providers.LmStudio),
+            checkedAt);
 
-        AddCodebrewRouterModel(models, checkedAt);
+        AddCodebrewRouterModel(models, providers, checkedAt);
     }
 
     private async Task ProbeAzureFoundryAsync(
@@ -228,7 +247,16 @@ public sealed class ModelAvailabilityHeartbeatService(
                             LastCheckedUtc: checkedAt));
                     }
 
-                    providers.Add(new ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt));
+                    await ProbeChatProviderAsync(
+                        providerKey: "AzureFoundry",
+                        modelId: azureOptions.Model,
+                        endpoint: azureOptions.Endpoint,
+                        ownedBy: "openai",
+                        isConfigured: true,
+                        checkedAt,
+                        models,
+                        providers,
+                        cancellationToken);
                     return;
                 }
             }
@@ -331,7 +359,10 @@ public sealed class ModelAvailabilityHeartbeatService(
         }
     }
 
-    private void AddCodebrewRouterModel(ICollection<AvailableModel> models, DateTimeOffset checkedAt)
+    private void AddCodebrewRouterModel(
+        ICollection<AvailableModel> models,
+        ICollection<ProviderAvailabilitySnapshot> providers,
+        DateTimeOffset checkedAt)
     {
         var codebrewOptions = _options.CodebrewRouter;
         if (!codebrewOptions.Enabled || string.IsNullOrWhiteSpace(codebrewOptions.ModelId))
@@ -355,6 +386,11 @@ public sealed class ModelAvailabilityHeartbeatService(
             Enabled: hasBackingProvider,
             ErrorMessage: hasBackingProvider ? null : "No backing provider is currently available.",
             LastCheckedUtc: checkedAt));
+        providers.Add(new ProviderAvailabilitySnapshot(
+            "CodebrewRouter",
+            hasBackingProvider,
+            hasBackingProvider ? null : "No backing provider is currently available.",
+            checkedAt));
     }
 
     private void AddConfiguredModel(
@@ -411,6 +447,12 @@ public sealed class ModelAvailabilityHeartbeatService(
         => !string.IsNullOrWhiteSpace(options.BaseUrl) &&
            !string.IsNullOrWhiteSpace(options.Model);
 
+    private static bool IsLmStudioConfigured(LmStudioOptions options)
+        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
+           !string.IsNullOrWhiteSpace(options.Model);
+
     private static bool IsOptionalLocalProvider(string providerKey)
-        => string.Equals(providerKey, "FoundryLocal", StringComparison.OrdinalIgnoreCase);
+        => string.Equals(providerKey, "FoundryLocal", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(providerKey, "OllamaLocal", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(providerKey, "LmStudio", StringComparison.OrdinalIgnoreCase);
 }

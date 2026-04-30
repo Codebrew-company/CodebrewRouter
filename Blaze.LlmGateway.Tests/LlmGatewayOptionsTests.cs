@@ -35,6 +35,16 @@ public class LlmGatewayOptionsTests
     }
 
     [Fact]
+    public void LmStudioOptions_DefaultsToLocalOpenAiCompatibleEndpoint()
+    {
+        var options = new LlmGatewayOptions();
+
+        Assert.Equal("http://192.168.16.56:1234/v1", options.Providers.LmStudio.Endpoint);
+        Assert.Equal("local-model", options.Providers.LmStudio.Model);
+        Assert.Equal("notneeded", options.Providers.LmStudio.ApiKey);
+    }
+
+    [Fact]
     public void FoundryConfigurationAliases_MapsCopilotEnvironmentVariables_WhenGatewayKeysAreMissing()
     {
         const string endpoint = "https://example-foundry.openai.azure.com/";
@@ -159,6 +169,7 @@ public class LlmGatewayOptionsTests
         Assert.Contains(models, model => model.Provider == "CodebrewRouter" && model.Id == "codebrewRouter");
         Assert.Contains(models, model => model.Provider == "FoundryLocal" && model.Id == "Phi-4-mini-instruct-cuda-gpu:5");
         Assert.Contains(models, model => model.Provider == "OllamaLocal" && model.Id == "gemma4:e4b");
+        Assert.Contains(models, model => model.Provider == "LmStudio" && model.Id == "local-model");
         Assert.Contains(models, model => model.Provider == "GithubModels" && model.Id == "gpt-4o-mini");
     }
 
@@ -269,6 +280,13 @@ public class LlmGatewayOptionsTests
         {
             models.Add(new AvailableModel(options.Providers.OllamaLocal.Model, "OllamaLocal", "ollama", "configured", options.Providers.OllamaLocal.BaseUrl, Enabled: true, LastCheckedUtc: checkedAt));
             providers.Add(new ProviderAvailabilitySnapshot("OllamaLocal", true, null, checkedAt));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Providers.LmStudio.Endpoint) &&
+            !string.IsNullOrWhiteSpace(options.Providers.LmStudio.Model))
+        {
+            models.Add(new AvailableModel(options.Providers.LmStudio.Model, "LmStudio", "lmstudio", "configured", options.Providers.LmStudio.Endpoint, Enabled: true, LastCheckedUtc: checkedAt));
+            providers.Add(new ProviderAvailabilitySnapshot("LmStudio", true, null, checkedAt));
         }
 
         if (options.CodebrewRouter.Enabled && !string.IsNullOrWhiteSpace(options.CodebrewRouter.ModelId))

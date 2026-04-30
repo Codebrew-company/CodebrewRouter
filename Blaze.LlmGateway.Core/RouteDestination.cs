@@ -4,5 +4,6 @@ public enum RouteDestination
 {
     AzureFoundry,
     FoundryLocal,
-    GithubModels
+    GithubModels,
+    LmStudio
 }

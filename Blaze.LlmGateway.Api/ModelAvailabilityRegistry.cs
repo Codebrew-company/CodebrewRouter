@@ -61,6 +61,14 @@ public sealed class ModelAvailabilityRegistry : IModelAvailabilityRegistry
         }
     }
 
+    public IReadOnlyList<ProviderAvailabilitySnapshot> GetProviders()
+    {
+        lock (_gate)
+        {
+            return [.. _providers.Values.OrderBy(provider => provider.Provider, StringComparer.OrdinalIgnoreCase)];
+        }
+    }
+
     public void UpdateSnapshot(
         IEnumerable<AvailableModel> models,
         IEnumerable<ProviderAvailabilitySnapshot> providers)

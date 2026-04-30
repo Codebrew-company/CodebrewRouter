@@ -47,6 +47,12 @@ public static class AppHostComposition
         var ollamaLocalModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:Model",
             "gemma4:e4b");
+        var lmStudioEndpoint = builder.Configuration.GetValue(
+            "LlmGateway:Providers:LmStudio:Endpoint",
+            "http://192.168.16.56:1234/v1");
+        var lmStudioModel = builder.Configuration.GetValue(
+            "LlmGateway:Providers:LmStudio:Model",
+            "local-model");
 
         // Gateway API listen URLs — controls which interfaces/ports Kestrel binds to.
         // Leave empty to use Kestrel defaults (localhost only from launchSettings.json).
@@ -98,7 +104,9 @@ public static class AppHostComposition
             //.WithReference(ghPhi4Mini)
             .WithEnvironment("LlmGateway__Providers__GithubModels__ApiKey", githubModelsApiKey)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaLocalBaseUrl)
-            .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel);
+            .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel)
+            .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
+            .WithEnvironment("LlmGateway__Providers__LmStudio__Model", lmStudioModel);
 
         if (string.IsNullOrWhiteSpace(azureFoundryEndpointAlias))
         {

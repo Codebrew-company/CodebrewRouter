@@ -18,6 +18,7 @@ public class ProvidersOptions
     public FoundryLocalOptions FoundryLocal { get; set; } = new();
     public OllamaLocalOptions OllamaLocal { get; set; } = new();
     public GithubModelsOptions GithubModels { get; set; } = new();
+    public LmStudioOptions LmStudio { get; set; } = new();
 }
 
 public class AzureFoundryOptions
@@ -59,6 +60,16 @@ public class GithubModelsOptions
     public int ReservedOutputTokens { get; set; } = 4096;
 }
 
+public class LmStudioOptions
+{
+    public string Endpoint { get; set; } = "http://192.168.16.56:1234/v1";
+    public string Model { get; set; } = "local-model";
+    /// <summary>LM Studio usually accepts any non-empty API key for its local OpenAI-compatible endpoint.</summary>
+    public string ApiKey { get; set; } = "notneeded";
+    public int MaxContextTokens { get; set; } = 32768;
+    public int ReservedOutputTokens { get; set; } = 2048;
+}
+
 public class RoutingOptions
 {
     /// <summary>Name of the Ollama model used to route requests (the meta-router).</summary>
@@ -68,8 +79,10 @@ public class RoutingOptions
     /// <summary>Failover chains: maps primary destination to list of fallback providers to try if primary fails.</summary>
     public Dictionary<string, List<string>> FailoverChains { get; set; } = new()
     {
-        { "AzureFoundry", ["FoundryLocal"] },
-        { "FoundryLocal", ["AzureFoundry"] }
+        { "AzureFoundry", ["FoundryLocal", "LmStudio"] },
+        { "FoundryLocal", ["AzureFoundry", "LmStudio"] },
+        { "GithubModels", ["AzureFoundry", "FoundryLocal", "LmStudio"] },
+        { "LmStudio", ["FoundryLocal", "AzureFoundry"] }
     };
 }
 

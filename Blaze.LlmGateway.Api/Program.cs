@@ -9,6 +9,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -45,6 +46,8 @@ builder.Services.AddSingleton<ModelAvailabilityRegistry>();
 builder.Services.AddSingleton<IModelAvailabilityRegistry>(sp => sp.GetRequiredService<ModelAvailabilityRegistry>());
 builder.Services.AddHostedService<ModelAvailabilityHeartbeatService>();
 builder.Services.AddSingleton<IModelCatalog, ModelCatalogService>();
+builder.Services.AddHealthChecks()
+    .AddCheck<ModelProviderHealthCheck>("model_providers", failureStatus: HealthStatus.Degraded);
 
 // MCP integration disabled (microsoft-learn server connection issues)
 // To re-enable: uncomment below and ensure @microsoft/mcp-server-microsoft-learn is available
@@ -156,6 +159,8 @@ const string landingHtml = """
     <ul>
       <li><a class="card" href="/v1/models"><span class="title">GET /v1/models</span>
           <span class="path">List available models</span></a></li>
+      <li><a class="card" href="/v1/models/diagnostics"><span class="title">GET /v1/models/diagnostics</span>
+          <span class="path">Show provider connectivity and errors</span></a></li>
       <li><a class="card" href="/scalar#tag/chat"><span class="title">POST /v1/chat/completions</span>
           <span class="path">Streaming chat (SSE). Try it in Scalar.</span></a></li>
       <li><a class="card" href="/health"><span class="title">GET /health</span>

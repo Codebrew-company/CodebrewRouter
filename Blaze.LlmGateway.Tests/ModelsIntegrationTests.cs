@@ -47,6 +47,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     services.AddKeyedSingleton<IChatClient>("FoundryLocal", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("GithubModels", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("OllamaLocal", mockChatClient.Object);
+                    services.AddKeyedSingleton<IChatClient>("LmStudio", mockChatClient.Object);
                     services.AddSingleton<IModelCatalog>(new FakeModelCatalog());
                 });
             });
@@ -136,7 +137,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
             }
         }
 
-        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal" };
+        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio" };
         var hasKnownProvider = providers.Any(p => knownProviders.Contains(p));
         Assert.True(hasKnownProvider, $"No known providers found. Found: {string.Join(", ", providers)}");
     }
@@ -269,7 +270,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         // Assert
         Assert.True(json.RootElement.TryGetProperty("data", out var data));
 
-        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "CodebrewRouter" };
+        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "CodebrewRouter" };
 
         foreach (var model in data.EnumerateArray())
         {
@@ -360,6 +361,36 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Contains("FoundryLocal", providers);
     }
 
+    [Fact]
+    public async Task ModelDiagnostics_ReturnsUnavailableProvidersWithReasons()
+    {
+        var registry = _factory!.Services.GetRequiredService<Blaze.LlmGateway.Api.ModelAvailabilityRegistry>();
+        var checkedAt = DateTimeOffset.UtcNow;
+        registry.UpdateSnapshot(
+            [
+                new AvailableModel("gpt-4o", "AzureFoundry", "openai", "configured", "https://example", Enabled: true, LastCheckedUtc: checkedAt),
+                new AvailableModel("local-model", "LmStudio", "lmstudio", "configured", "http://192.168.16.56:1234/v1", Enabled: false, ErrorMessage: "Connection refused", LastCheckedUtc: checkedAt)
+            ],
+            [
+                new Blaze.LlmGateway.Api.ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt),
+                new Blaze.LlmGateway.Api.ProviderAvailabilitySnapshot("LmStudio", false, "Connection refused", checkedAt)
+            ]);
+
+        var response = await _client!.GetAsync("/v1/models/diagnostics");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("degraded", json.RootElement.GetProperty("status").GetString());
+
+        var lmStudio = json.RootElement.GetProperty("models")
+            .EnumerateArray()
+            .Single(model => model.GetProperty("provider").GetString() == "LmStudio");
+
+        Assert.False(lmStudio.GetProperty("enabled").GetBoolean());
+        Assert.Equal("Connection refused", lmStudio.GetProperty("errorMessage").GetString());
+    }
+
     private static void RemoveServicesByType(IServiceCollection services, Type serviceType)
     {
         var descriptors = services.Where(d => d.ServiceType == serviceType).ToList();
@@ -381,7 +412,8 @@ public class ModelsIntegrationTests : IAsyncLifetime
             => Task.FromResult<IReadOnlyList<AvailableModel>>([
                 new AvailableModel("gpt-4o", "AzureFoundry", "openai", "configured"),
                 new AvailableModel("Phi-4-mini-instruct-cuda-gpu:5", "FoundryLocal", "openai", "configured"),
-                new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "live")
+                new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "live"),
+                new AvailableModel("local-model", "LmStudio", "lmstudio", "configured")
             ]);
 
         public Task<AvailableModel?> FindByIdAsync(string modelId, CancellationToken cancellationToken = default)
