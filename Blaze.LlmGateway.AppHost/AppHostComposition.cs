@@ -95,7 +95,7 @@ public static class AppHostComposition
             .WaitFor(foundryLocalChat)
             .WithReference(foundryLocalChat)
             .WithReference(ghGpt4oMini)
-            .WithReference(ghPhi4Mini)
+            //.WithReference(ghPhi4Mini)
             .WithEnvironment("LlmGateway__Providers__GithubModels__ApiKey", githubModelsApiKey)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaLocalBaseUrl)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel);
