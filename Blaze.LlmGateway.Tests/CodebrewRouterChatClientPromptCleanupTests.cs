@@ -63,7 +63,7 @@ public class CodebrewRouterChatClientPromptCleanupTests
         Providers = new ProvidersOptions
         {
             AzureFoundry = new AzureFoundryOptions { Endpoint = "https://x", Model = "gpt-x", ApiKey = "k" },
-            FoundryLocal = new FoundryLocalOptions { Endpoint = "http://localhost", Model = "phi" },
+            FoundryLocal = new FoundryLocalOptions { Enabled = true, Endpoint = "http://localhost", Model = "phi" },
             GithubModels = new GithubModelsOptions { Endpoint = "https://x", Model = "gpt-x", ApiKey = "k" }
         }
     };

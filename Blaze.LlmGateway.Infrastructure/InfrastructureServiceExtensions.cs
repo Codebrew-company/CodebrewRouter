@@ -301,7 +301,7 @@ public static class InfrastructureServiceExtensions
             (HasValue(options.Endpoint) && HasValue(options.ApiKey)));
 
     private static bool IsFoundryLocalConfigured(FoundryLocalOptions options)
-        => HasValue(options.Endpoint) && HasValue(options.Model);
+        => options.Enabled && HasValue(options.Endpoint) && HasValue(options.Model);
 
     private static bool IsGithubModelsConfigured(GithubModelsOptions options)
         => HasValue(options.Endpoint) && HasValue(options.Model) && HasValue(options.ApiKey);

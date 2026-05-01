@@ -34,8 +34,9 @@ public class AzureFoundryOptions
 
 public class FoundryLocalOptions
 {
+    public bool Enabled { get; set; } = false;
     public string Endpoint { get; set; } = "http://127.0.0.1:58484";
-    public string Model { get; set; } = "Phi-4-mini-instruct-cuda-gpu:5";
+    public string Model { get; set; } = "phi-4-mini";
     /// <summary>Foundry Local uses "notneeded" as the API key.</summary>
     public string ApiKey { get; set; } = "notneeded";
     public int MaxContextTokens { get; set; } = 128000;

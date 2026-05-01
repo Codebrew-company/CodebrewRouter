@@ -317,7 +317,7 @@ public sealed class CodebrewRouterChatClient(
             "AzureFoundry" => HasValue(providers.AzureFoundry.Model) &&
                               (HasValue(providers.AzureFoundry.ResponsesEndpoint) || HasValue(providers.AzureFoundry.Endpoint)) &&
                               availabilityRegistry.IsProviderAvailable("AzureFoundry"),
-            "FoundryLocal" => HasValue(providers.FoundryLocal.Endpoint) && HasValue(providers.FoundryLocal.Model) && availabilityRegistry.IsProviderAvailable("FoundryLocal"),
+            "FoundryLocal" => providers.FoundryLocal.Enabled && HasValue(providers.FoundryLocal.Endpoint) && HasValue(providers.FoundryLocal.Model) && availabilityRegistry.IsProviderAvailable("FoundryLocal"),
             "GithubModels" => HasValue(providers.GithubModels.Endpoint) && HasValue(providers.GithubModels.Model) && HasValue(providers.GithubModels.ApiKey) && availabilityRegistry.IsProviderAvailable("GithubModels"),
             "OllamaLocal" => HasValue(providers.OllamaLocal.BaseUrl) && HasValue(providers.OllamaLocal.Model) && availabilityRegistry.IsProviderAvailable("OllamaLocal"),
             _ => true

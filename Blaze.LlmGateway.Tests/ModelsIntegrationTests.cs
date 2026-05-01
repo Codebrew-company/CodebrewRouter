@@ -340,7 +340,8 @@ public class ModelsIntegrationTests : IAsyncLifetime
             .ToArray();
 
         Assert.Contains("AzureFoundry", providers);
-        Assert.Contains("FoundryLocal", providers);
+        Assert.Contains("LmStudio", providers);
+        Assert.DoesNotContain("FoundryLocal", providers);
     }
 
     [Fact]
@@ -358,7 +359,8 @@ public class ModelsIntegrationTests : IAsyncLifetime
             .ToHashSet();
 
         Assert.Contains("AzureFoundry", providers);
-        Assert.Contains("FoundryLocal", providers);
+        Assert.Contains("LmStudio", providers);
+        Assert.DoesNotContain("FoundryLocal", providers);
     }
 
     [Fact]

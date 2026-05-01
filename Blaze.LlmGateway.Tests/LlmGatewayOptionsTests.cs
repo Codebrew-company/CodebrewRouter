@@ -26,12 +26,13 @@ public class LlmGatewayOptionsTests
     }
 
     [Fact]
-    public void FoundryLocalOptions_DefaultsToLoadedPhiMiniModel()
+    public void FoundryLocalOptions_DefaultsToDisabledPhiMiniAlias()
     {
         var options = new LlmGatewayOptions();
 
+        Assert.False(options.Providers.FoundryLocal.Enabled);
         Assert.Equal("http://127.0.0.1:58484", options.Providers.FoundryLocal.Endpoint);
-        Assert.Equal("Phi-4-mini-instruct-cuda-gpu:5", options.Providers.FoundryLocal.Model);
+        Assert.Equal("phi-4-mini", options.Providers.FoundryLocal.Model);
     }
 
     [Fact]
@@ -167,7 +168,7 @@ public class LlmGatewayOptionsTests
         var models = await service.GetAvailableModelsAsync();
 
         Assert.Contains(models, model => model.Provider == "CodebrewRouter" && model.Id == "codebrewRouter");
-        Assert.Contains(models, model => model.Provider == "FoundryLocal" && model.Id == "Phi-4-mini-instruct-cuda-gpu:5");
+        Assert.DoesNotContain(models, model => model.Provider == "FoundryLocal");
         Assert.Contains(models, model => model.Provider == "OllamaLocal" && model.Id == "gemma4:e4b");
         Assert.Contains(models, model => model.Provider == "LmStudio" && model.Id == "local-model");
         Assert.Contains(models, model => model.Provider == "GithubModels" && model.Id == "gpt-4o-mini");
@@ -260,7 +261,8 @@ public class LlmGatewayOptionsTests
             providers.Add(new ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt));
         }
 
-        if (!string.IsNullOrWhiteSpace(options.Providers.FoundryLocal.Endpoint) &&
+        if (options.Providers.FoundryLocal.Enabled &&
+            !string.IsNullOrWhiteSpace(options.Providers.FoundryLocal.Endpoint) &&
             !string.IsNullOrWhiteSpace(options.Providers.FoundryLocal.Model))
         {
             models.Add(new AvailableModel(options.Providers.FoundryLocal.Model, "FoundryLocal", "openai", "configured", options.Providers.FoundryLocal.Endpoint, Enabled: true, LastCheckedUtc: checkedAt));

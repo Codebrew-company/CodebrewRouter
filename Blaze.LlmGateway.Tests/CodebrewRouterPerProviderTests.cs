@@ -123,7 +123,7 @@ public class CodebrewRouterPerProviderTests
             Providers =
             {
                 AzureFoundry  = { Endpoint = "https://test.openai.azure.com/", Model = "gpt-4o", ApiKey = "test-key" },
-                FoundryLocal  = { Endpoint = "http://127.0.0.1:58484",         Model = "Phi-4-mini-instruct-cuda-gpu:5" },
+                FoundryLocal  = { Enabled = true, Endpoint = "http://127.0.0.1:58484", Model = "phi-4-mini" },
                 GithubModels  = { Endpoint = "https://models.inference.ai.azure.com", Model = "gpt-4o-mini", ApiKey = "test-github-pat" },
                 OllamaLocal   = { BaseUrl  = "http://127.0.0.1:11434",         Model = "gemma4:e4b" }
             }

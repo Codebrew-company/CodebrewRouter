@@ -284,8 +284,9 @@ public class CodebrewRouterChatClientTests
 
         var gatewayOptions = new LlmGatewayOptions();
         gatewayOptions.Providers.AzureFoundry.Endpoint = "";
+        gatewayOptions.Providers.FoundryLocal.Enabled = true;
         gatewayOptions.Providers.FoundryLocal.Endpoint = "http://127.0.0.1:58484";
-        gatewayOptions.Providers.FoundryLocal.Model = "Phi-4-mini-instruct-cuda-gpu:5";
+        gatewayOptions.Providers.FoundryLocal.Model = "phi-4-mini";
 
         var router = CreateRouter(new Mock<IChatClient>().Object, ClassifierFor(TaskType.General).Object, sp, opts, gatewayOptions);
         var result = await router.GetResponseAsync(UserMessages("hello"));
@@ -375,7 +376,7 @@ public class CodebrewRouterChatClientTests
             Providers =
             {
                 AzureFoundry = { Endpoint = "https://x", Model = "tiny-model", ApiKey = "k", MaxContextTokens = 256, ReservedOutputTokens = 32 },
-                FoundryLocal = { Endpoint = "http://localhost", Model = "roomy-model", MaxContextTokens = 1024, ReservedOutputTokens = 32 }
+                FoundryLocal = { Enabled = true, Endpoint = "http://localhost", Model = "roomy-model", MaxContextTokens = 1024, ReservedOutputTokens = 32 }
             }
         };
         var routerOptions = new CodebrewRouterOptions

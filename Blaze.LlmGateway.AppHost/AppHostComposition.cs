@@ -32,6 +32,9 @@ public static class AppHostComposition
         var azureFoundryApiKeyAlias = builder.Configuration["COPILOT_AZURE_API_KEY"];
         var azureFoundryModelAlias = builder.Configuration["COPILOT_FOUNDRY_DEFAULT_MODEL"]
             ?? builder.Configuration["COPILOT_FOUNDRY_GENERAL_MODEL"];
+        var foundryLocalEnabled = builder.Configuration.GetValue(
+            "LlmGateway:Providers:FoundryLocal:Enabled",
+            false);
         var foundryLocalModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:FoundryLocal:Model",
             "phi-4-mini");
@@ -59,36 +62,46 @@ public static class AppHostComposition
         // Set to "http://0.0.0.0:5022" to expose the gateway on all LAN interfaces.
         var gatewayListenUrls = builder.Configuration.GetValue<string?>("Gateway:ListenUrls");
 
-        // ── Foundry Local — Aspire-managed dev-only resource ──
-        // Uses Aspire.Hosting.Foundry's RunAsFoundryLocal() to start Foundry Local
-        // (https://aspire.dev/integrations/cloud/azure/azure-ai-foundry/azure-ai-foundry-get-started/).
-        // Requires the Foundry Local CLI installed on the dev machine.
-        var foundry = builder.AddFoundry("foundryLocal")
-            .RunAsFoundryLocal();
+        IResourceBuilder<FoundryDeploymentResource>? foundryLocalConnectionString = null;
+        if (foundryLocalEnabled)
+        {
+            // ── Foundry Local — Aspire-managed dev-only resource ──
+            // Disabled by default because some machines auto-select a cached CUDA variant
+            // that fails to load with CUBLAS_STATUS_ALLOC_FAILED. Re-enable via
+            // LlmGateway:Providers:FoundryLocal:Enabled=true once the local runtime is stable.
+            var foundry = builder.AddFoundry("foundryLocal")
+                .RunAsFoundryLocal();
 
-        var foundryLocalChat = foundry.AddDeployment(
-            "foundryLocalChat",
-            foundryLocalModel,
-            foundryLocalModelVersion,
-            foundryLocalModelFormat);
+            var foundryLocalChat = foundry.AddDeployment(
+                "foundryLocalChat",
+                foundryLocalModel,
+                foundryLocalModelVersion,
+                foundryLocalModelFormat);
 
-        // Aspire.Hosting.Foundry 13.3.0-preview.1 has a race in RunAsFoundryLocal()'s
-        // WithInitializer: it samples FoundryLocalManager.IsServiceRunning immediately after
-        // StartServiceAsync(), which can return false while the service is still warming up.
-        // The parent foundryLocal resource then sticks in FailedToStart even though the
-        // service comes up moments later and the deployment downloads + loads the model
-        // successfully. Promote the parent to Running once the deployment reports Running.
-        builder.Eventing.Subscribe<ResourceReadyEvent>(
-            foundryLocalChat.Resource,
-            async (evt, ct) =>
-            {
-                var rns = evt.Services.GetRequiredService<ResourceNotificationService>();
-                await rns.PublishUpdateAsync(
-                    foundry.Resource,
-                    state => state.State?.Text == KnownResourceStates.FailedToStart
-                        ? state with { State = new ResourceStateSnapshot(KnownResourceStates.Running, KnownResourceStateStyles.Success) }
-                        : state).ConfigureAwait(false);
-            });
+            // Aspire.Hosting.Foundry 13.3.0-preview.1 has a race in RunAsFoundryLocal()'s
+            // WithInitializer: it samples FoundryLocalManager.IsServiceRunning immediately after
+            // StartServiceAsync(), which can return false while the service is still warming up.
+            // The parent foundryLocal resource then sticks in FailedToStart even though the
+            // service comes up moments later and the deployment downloads + loads the model
+            // successfully. Promote the parent to Running once the deployment reports Running.
+            builder.Eventing.Subscribe<ResourceReadyEvent>(
+                foundryLocalChat.Resource,
+                async (evt, ct) =>
+                {
+                    var rns = evt.Services.GetRequiredService<ResourceNotificationService>();
+                    await rns.PublishUpdateAsync(
+                        foundry.Resource,
+                        state => state.State?.Text == KnownResourceStates.FailedToStart
+                            ? state with { State = new ResourceStateSnapshot(KnownResourceStates.Running, KnownResourceStateStyles.Success) }
+                            : state).ConfigureAwait(false);
+                });
+
+            foundryLocalConnectionString = foundryLocalChat;
+        }
+        else
+        {
+            aspireLogger.LogInformation("  ├─ Foundry Local: disabled (set LlmGateway:Providers:FoundryLocal:Enabled=true to enable)");
+        }
 
         // ── GitHub Models ──
         var ghGpt4oMini = builder.AddGitHubModel("gh-gpt4o-mini", "openai/gpt-4o-mini")
@@ -98,15 +111,20 @@ public static class AppHostComposition
 
         // ── API project — wire all resources ──
         var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("api")
-            .WaitFor(foundryLocalChat)
-            .WithReference(foundryLocalChat)
             .WithReference(ghGpt4oMini)
             //.WithReference(ghPhi4Mini)
+            .WithEnvironment("LlmGateway__Providers__FoundryLocal__Enabled", foundryLocalEnabled.ToString())
             .WithEnvironment("LlmGateway__Providers__GithubModels__ApiKey", githubModelsApiKey)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaLocalBaseUrl)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Model", lmStudioModel);
+
+        if (foundryLocalConnectionString is not null)
+        {
+            api.WaitFor(foundryLocalConnectionString)
+               .WithReference(foundryLocalConnectionString);
+        }
 
         if (string.IsNullOrWhiteSpace(azureFoundryEndpointAlias))
         {

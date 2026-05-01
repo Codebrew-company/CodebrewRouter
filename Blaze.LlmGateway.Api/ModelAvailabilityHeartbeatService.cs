@@ -435,7 +435,8 @@ public sealed class ModelAvailabilityHeartbeatService(
             !string.IsNullOrWhiteSpace(options.Endpoint));
 
     private static bool IsFoundryLocalConfigured(FoundryLocalOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
+        => options.Enabled &&
+           !string.IsNullOrWhiteSpace(options.Endpoint) &&
            !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsGithubModelsConfigured(GithubModelsOptions options)

@@ -80,7 +80,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             messages = new[] { new { role = "user", content = "What is 2 + 2?" } },
             temperature = 0.1,
             max_tokens = 50
@@ -103,7 +103,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             messages = new[] { new { role = "user", content = "Explain gravity briefly." } },
             stream = false
         };
@@ -127,7 +127,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             messages = new[]
             {
                 new { role = "system", content = "You are a concise assistant." },
@@ -150,7 +150,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             messages = new[] { new { role = "user", content = "Write one sentence about AI." } },
             stream = true
         };
@@ -173,7 +173,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             messages = new[] { new { role = "user", content = "Say hi." } },
             stream = true
         };
@@ -230,7 +230,7 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     {
         var request = new
         {
-            model = "Phi-4-mini-instruct-cuda-gpu:5",
+            model = "phi-4-mini",
             prompt = "The capital of France is",
             max_tokens = 10
         };
@@ -254,10 +254,11 @@ public class FoundryLocalIntegrationTests : IAsyncLifetime
     ///   2. Preferred: run `dotnet run --project Blaze.LlmGateway.AppHost` so Aspire injects
     ///      the Foundry Local connection string into the API automatically.
     ///   3. Standalone fallback: start Foundry Local yourself and load the model:
-    ///      foundrylocal start phi-4-mini
+    ///      foundry model run phi-4-mini --device CPU --prompt "ping"
     ///   4. If you run the API directly instead of AppHost, configure the endpoint:
     ///      dotnet user-secrets set "LlmGateway:Providers:FoundryLocal:Endpoint" "http://127.0.0.1:58484" --project Blaze.LlmGateway.Api
-    ///      dotnet user-secrets set "LlmGateway:Providers:FoundryLocal:Model" "Phi-4-mini-instruct-cuda-gpu:5" --project Blaze.LlmGateway.Api
+    ///      dotnet user-secrets set "LlmGateway:Providers:FoundryLocal:Enabled" "true" --project Blaze.LlmGateway.Api
+    ///      dotnet user-secrets set "LlmGateway:Providers:FoundryLocal:Model" "phi-4-mini" --project Blaze.LlmGateway.Api
     ///   5. Remove the [Fact(Skip = ...)] attribute and use [Fact].
     /// </summary>
     [Fact(Skip = "Requires a running Foundry Local instance with Phi-4-mini loaded. See instructions in the XML doc comment.")]
