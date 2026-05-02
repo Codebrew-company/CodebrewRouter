@@ -73,21 +73,26 @@ public sealed class ModelAvailabilityRegistry : IModelAvailabilityRegistry
         IEnumerable<AvailableModel> models,
         IEnumerable<ProviderAvailabilitySnapshot> providers)
     {
+        // Perform expensive LINQ operations OUTSIDE the lock
+        var deduplicatedModels = models
+            .GroupBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(model => model.Enabled).First())
+            .OrderBy(model => model.Provider, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var deduplicatedProviders = providers
+            .GroupBy(provider => provider.Provider, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(provider => provider.Enabled).First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        // Acquire lock only to swap the arrays/dictionaries (very fast)
         lock (_gate)
         {
-            _models = models
-                .GroupBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.OrderByDescending(model => model.Enabled).First())
-                .OrderBy(model => model.Provider, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            _providers = providers
-                .GroupBy(provider => provider.Provider, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.OrderByDescending(provider => provider.Enabled).First(),
-                    StringComparer.OrdinalIgnoreCase);
+            _models = deduplicatedModels;
+            _providers = deduplicatedProviders;
         }
     }
 }

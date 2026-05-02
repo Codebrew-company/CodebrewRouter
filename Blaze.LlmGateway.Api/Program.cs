@@ -184,6 +184,28 @@ if (app.Environment.IsDevelopment())
     startupLogger.LogInformation("  ├─ Permissive 'devui' CORS policy active (Development only)");
 }
 
+// Add early request logging middleware to catch hangs before handlers
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetService<ILogger<Program>>();
+    logger?.LogInformation($"📥 [{context.Request.Method}] {context.Request.Path} - Content-Type: {context.Request.ContentType}");
+    
+    if (context.Request.Path.Value?.Contains("/v1/chat") == true)
+    {
+        logger?.LogInformation("🎯 CHAT ENDPOINT ENTRY LOGGED");
+    }
+    
+    try
+    {
+        await next(context);
+    }
+    catch (Exception ex)
+    {
+        logger?.LogError(ex, "❌ Request pipeline exception");
+        throw;
+    }
+});
+
 startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json");
 startupLogger.LogInformation("  ├─ Scalar available at /scalar");
 
