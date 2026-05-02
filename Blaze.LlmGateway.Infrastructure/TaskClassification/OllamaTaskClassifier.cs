@@ -63,7 +63,12 @@ public sealed class OllamaTaskClassifier(
             };
 
             var opts = new ChatOptions { MaxOutputTokens = 5, Temperature = 0f };
-            var response = await routerClient.GetResponseAsync(classifyMessages, opts, cancellationToken);
+            
+            // Add timeout to prevent hanging on unreachable Ollama instances (task classifier probe)
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(3)); // 3-second timeout on classifier probe
+            
+            var response = await routerClient.GetResponseAsync(classifyMessages, opts, timeoutCts.Token);
             var responseText = response.Text?.Trim() ?? "";
 
             // Tier 1: exact match
@@ -83,6 +88,15 @@ public sealed class OllamaTaskClassifier(
             }
 
             logger.LogWarning("OllamaTaskClassifier unrecognised response '{Response}' — falling back to keyword classifier", responseText);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // Timeout or cancellation on classifier probe — open circuit and fall back
+            if (_circuitOpenedAt is null)
+            {
+                logger.LogWarning(ex, "OllamaTaskClassifier probe timed out (or was cancelled) — opening circuit for {Cooldown}; falling back to keyword classifier", CooldownDuration);
+            }
+            _circuitOpenedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {

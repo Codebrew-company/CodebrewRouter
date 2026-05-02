@@ -58,7 +58,12 @@ public class OllamaMetaRoutingStrategy(
             };
 
             var routingOptions = new ChatOptions { MaxOutputTokens = 10, Temperature = 0f };
-            var response = await routerClient.GetResponseAsync(routingMessages, routingOptions, cancellationToken);
+            
+            // Add timeout to prevent hanging on unreachable Ollama instances (primary router probe)
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(3)); // 3-second timeout on router probe
+            
+            var response = await routerClient.GetResponseAsync(routingMessages, routingOptions, timeoutCts.Token);
             var responseText = response.Text?.Trim() ?? "";
 
             if (Enum.TryParse<RouteDestination>(responseText, ignoreCase: true, out var destination))
@@ -76,6 +81,15 @@ public class OllamaMetaRoutingStrategy(
             }
 
             logger.LogWarning("Meta-router returned unrecognized destination: '{Response}'. Falling back.", responseText);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // Timeout or cancellation on router probe — open circuit and fall back
+            if (_circuitOpenedAt is null)
+            {
+                logger.LogWarning(ex, "Meta-router probe timed out (or was cancelled) — opening circuit for {Cooldown}; falling back to keyword strategy.", CooldownDuration);
+            }
+            _circuitOpenedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
         {
