@@ -12,6 +12,7 @@ public sealed class ModelAvailabilityHeartbeatService(
     IServiceProvider serviceProvider,
     IOptions<LlmGatewayOptions> options,
     AzureFoundryModelDiscovery azureFoundryModelDiscovery,
+    LmStudioModelDiscovery lmStudioModelDiscovery,
     ModelAvailabilityRegistry registry,
     ILogger<ModelAvailabilityHeartbeatService> logger) : IHostedService, IDisposable
 {
@@ -30,7 +31,10 @@ public sealed class ModelAvailabilityHeartbeatService(
         }
 
         logger.LogInformation("Starting model availability heartbeat.");
-        await RefreshSnapshotAsync(cancellationToken, probeProviders: true);
+        // Seed configured models initially (disabled state) for startup visibility.
+        // RunLoopAsync fires the first real probe immediately before initial timer tick,
+        // which will update these seeds to enabled/disabled based on actual health.
+        await RefreshSnapshotAsync(cancellationToken, probeProviders: false);
 
         _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(5, _options.Availability.RefreshIntervalSeconds)));
@@ -70,6 +74,9 @@ public sealed class ModelAvailabilityHeartbeatService(
 
         try
         {
+            // Initial live probe runs immediately so real provider status is available soon after startup.
+            await RefreshSnapshotAsync(cancellationToken, probeProviders: true);
+
             while (await _timer.WaitForNextTickAsync(cancellationToken))
             {
                 await RefreshSnapshotAsync(cancellationToken, probeProviders: true);
@@ -93,7 +100,12 @@ public sealed class ModelAvailabilityHeartbeatService(
             return;
         }
 
+        // Seed configured models first for fallback/visibility
+        SeedConfiguredModels(models, providers, checkedAt);
+
+        // Then probe to update with discovered/validated state
         await ProbeAzureFoundryAsync(models, providers, checkedAt, cancellationToken);
+        await ProbeLmStudioAsync(models, providers, checkedAt, cancellationToken);
         await ProbeChatProviderAsync(
             providerKey: "FoundryLocal",
             modelId: _options.Providers.FoundryLocal.Model,
@@ -120,16 +132,6 @@ public sealed class ModelAvailabilityHeartbeatService(
             endpoint: _options.Providers.OllamaLocal.BaseUrl,
             ownedBy: "ollama",
             isConfigured: IsOllamaLocalConfigured(_options.Providers.OllamaLocal),
-            checkedAt,
-            models,
-            providers,
-            cancellationToken);
-        await ProbeChatProviderAsync(
-            providerKey: "LmStudio",
-            modelId: _options.Providers.LmStudio.Model,
-            endpoint: _options.Providers.LmStudio.Endpoint,
-            ownedBy: "lmstudio",
-            isConfigured: IsLmStudioConfigured(_options.Providers.LmStudio),
             checkedAt,
             models,
             providers,
@@ -214,6 +216,8 @@ public sealed class ModelAvailabilityHeartbeatService(
 
         try
         {
+            var discoveredModels = new List<AvailableModel>();
+            
             if (!string.IsNullOrWhiteSpace(azureOptions.Endpoint))
             {
                 using var timeoutCts = CreateTimeoutToken(cancellationToken);
@@ -222,55 +226,69 @@ public sealed class ModelAvailabilityHeartbeatService(
                     azureOptions.ApiKey,
                     timeoutCts.Token);
 
-                if (discoveryResult.Success)
+                if (discoveryResult.Success && discoveryResult.Models.Count > 0)
                 {
-                    foreach (var discoveredModel in discoveryResult.Models)
-                    {
-                        models.Add(discoveredModel with
-                        {
-                            Enabled = true,
-                            ErrorMessage = null,
-                            LastCheckedUtc = checkedAt
-                        });
-                    }
-
-                    if (!discoveryResult.Models.Any(model => string.Equals(model.Id, azureOptions.Model, StringComparison.OrdinalIgnoreCase)) &&
-                        !string.IsNullOrWhiteSpace(azureOptions.Model))
-                    {
-                        models.Add(new AvailableModel(
-                            azureOptions.Model,
-                            "AzureFoundry",
-                            "openai",
-                            "configured",
-                            azureOptions.Endpoint,
-                            Enabled: true,
-                            LastCheckedUtc: checkedAt));
-                    }
-
-                    await ProbeChatProviderAsync(
-                        providerKey: "AzureFoundry",
-                        modelId: azureOptions.Model,
-                        endpoint: azureOptions.Endpoint,
-                        ownedBy: "openai",
-                        isConfigured: true,
-                        checkedAt,
-                        models,
-                        providers,
-                        cancellationToken);
-                    return;
+                    discoveredModels = discoveryResult.Models.ToList();
+                    logger.LogDebug("Discovered {Count} models from Azure Foundry", discoveredModels.Count);
                 }
             }
 
-            await ProbeChatProviderAsync(
-                providerKey: "AzureFoundry",
-                modelId: azureOptions.Model,
-                endpoint: azureOptions.Endpoint,
-                ownedBy: "openai",
-                isConfigured: true,
-                checkedAt,
-                models,
-                providers,
-                cancellationToken);
+            // Probe chat with configured model to validate provider health
+            using var chatTimeoutCts = CreateTimeoutToken(cancellationToken);
+            using var scope = serviceProvider.CreateScope();
+            var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>("AzureFoundry");
+            var response = await client.GetResponseAsync(
+                [new ChatMessage(ChatRole.User, "ping")],
+                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
+                chatTimeoutCts.Token);
+
+            // Chat probe succeeded — mark provider and models as enabled
+            providers.Add(new ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt));
+            
+            if (discoveredModels.Count > 0)
+            {
+                // Add discovered models as enabled
+                foreach (var discoveredModel in discoveredModels)
+                {
+                    models.Add(discoveredModel with
+                    {
+                        Enabled = true,
+                        ErrorMessage = null,
+                        LastCheckedUtc = checkedAt
+                    });
+                }
+
+                // If configured model is not in discovered list, add it too for backward compat
+                if (!discoveredModels.Any(m => string.Equals(m.Id, azureOptions.Model, StringComparison.OrdinalIgnoreCase)) &&
+                    !string.IsNullOrWhiteSpace(azureOptions.Model))
+                {
+                    models.Add(new AvailableModel(
+                        azureOptions.Model,
+                        "AzureFoundry",
+                        "openai",
+                        "configured",
+                        azureOptions.Endpoint,
+                        Enabled: true,
+                        LastCheckedUtc: checkedAt));
+                }
+            }
+            else
+            {
+                // No discovered models — fall back to configured model
+                models.Add(new AvailableModel(
+                    azureOptions.Model,
+                    "AzureFoundry",
+                    "openai",
+                    "configured",
+                    azureOptions.Endpoint,
+                    Enabled: true,
+                    LastCheckedUtc: checkedAt));
+            }
+
+            logger.LogDebug(
+                "Availability probe succeeded for AzureFoundry with model {Model}. Response length: {Length}",
+                azureOptions.Model,
+                response.Text?.Length ?? 0);
         }
         catch (Exception ex)
         {
@@ -283,6 +301,121 @@ public sealed class ModelAvailabilityHeartbeatService(
                 "openai",
                 "configured",
                 azureOptions.Endpoint,
+                Enabled: false,
+                ErrorMessage: error,
+                LastCheckedUtc: checkedAt));
+        }
+    }
+
+    private async Task ProbeLmStudioAsync(
+        ICollection<AvailableModel> models,
+        ICollection<ProviderAvailabilitySnapshot> providers,
+        DateTimeOffset checkedAt,
+        CancellationToken cancellationToken)
+    {
+        var lmStudioOptions = _options.Providers.LmStudio;
+        if (!IsLmStudioConfigured(lmStudioOptions))
+        {
+            return;
+        }
+
+        try
+        {
+            var discoveredModels = new List<AvailableModel>();
+
+            if (!string.IsNullOrWhiteSpace(lmStudioOptions.Endpoint))
+            {
+                using var timeoutCts = CreateTimeoutToken(cancellationToken);
+                var discoveryResult = await lmStudioModelDiscovery.TryDiscoverModelsAsync(
+                    lmStudioOptions.Endpoint,
+                    lmStudioOptions.ApiKey,
+                    timeoutCts.Token);
+
+                if (discoveryResult.Success && discoveryResult.Models.Count > 0)
+                {
+                    discoveredModels = discoveryResult.Models.ToList();
+                    logger.LogDebug("Discovered {Count} models from LM Studio", discoveredModels.Count);
+                }
+            }
+
+            // Probe chat with configured model to validate provider health
+            using var chatTimeoutCts = CreateTimeoutToken(cancellationToken);
+            using var scope = serviceProvider.CreateScope();
+            var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>("LmStudio");
+            var response = await client.GetResponseAsync(
+                [new ChatMessage(ChatRole.User, "ping")],
+                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
+                chatTimeoutCts.Token);
+
+            // Chat probe succeeded — mark provider and models as enabled
+            providers.Add(new ProviderAvailabilitySnapshot("LmStudio", true, null, checkedAt));
+
+            if (discoveredModels.Count > 0)
+            {
+                // Add discovered models as enabled
+                foreach (var discoveredModel in discoveredModels)
+                {
+                    models.Add(discoveredModel with
+                    {
+                        Enabled = true,
+                        ErrorMessage = null,
+                        LastCheckedUtc = checkedAt
+                    });
+                }
+
+                // If configured model is not in discovered list, add it too for backward compat
+                if (!discoveredModels.Any(m => string.Equals(m.Id, lmStudioOptions.Model, StringComparison.OrdinalIgnoreCase)) &&
+                    !string.IsNullOrWhiteSpace(lmStudioOptions.Model))
+                {
+                    models.Add(new AvailableModel(
+                        lmStudioOptions.Model,
+                        "LmStudio",
+                        "lmstudio",
+                        "configured",
+                        lmStudioOptions.Endpoint,
+                        Enabled: true,
+                        LastCheckedUtc: checkedAt));
+                }
+            }
+            else
+            {
+                // No discovered models — fall back to configured model
+                models.Add(new AvailableModel(
+                    lmStudioOptions.Model,
+                    "LmStudio",
+                    "lmstudio",
+                    "configured",
+                    lmStudioOptions.Endpoint,
+                    Enabled: true,
+                    LastCheckedUtc: checkedAt));
+            }
+
+            logger.LogDebug(
+                "Availability probe succeeded for LmStudio with model {Model}. Response length: {Length}",
+                lmStudioOptions.Model,
+                response.Text?.Length ?? 0);
+        }
+        catch (Exception ex)
+        {
+            var error = GetErrorMessage(ex);
+            if (IsOptionalLocalProvider("LmStudio"))
+            {
+                logger.LogInformation(
+                    "Availability probe failed for optional local provider LmStudio: {Error}",
+                    error);
+            }
+            else
+            {
+                logger.LogWarning(ex, "LmStudio availability probe failed: {Error}", error);
+            }
+
+            providers.Add(new ProviderAvailabilitySnapshot("LmStudio", false, error, checkedAt));
+            models.Add(new AvailableModel(
+                lmStudioOptions.Model,
+                "LmStudio",
+                "lmstudio",
+                "configured",
+                lmStudioOptions.Endpoint,
                 Enabled: false,
                 ErrorMessage: error,
                 LastCheckedUtc: checkedAt));
@@ -431,6 +564,7 @@ public sealed class ModelAvailabilityHeartbeatService(
 
     private static bool IsAzureFoundryConfigured(AzureFoundryOptions options)
         => !string.IsNullOrWhiteSpace(options.Model) &&
+           !string.IsNullOrWhiteSpace(options.ApiKey) &&
            (!string.IsNullOrWhiteSpace(options.ResponsesEndpoint) ||
             !string.IsNullOrWhiteSpace(options.Endpoint));
 
@@ -449,8 +583,7 @@ public sealed class ModelAvailabilityHeartbeatService(
            !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsLmStudioConfigured(LmStudioOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
-           !string.IsNullOrWhiteSpace(options.Model);
+        => !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsOptionalLocalProvider(string providerKey)
         => string.Equals(providerKey, "FoundryLocal", StringComparison.OrdinalIgnoreCase) ||

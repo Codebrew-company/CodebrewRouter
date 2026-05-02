@@ -18,7 +18,7 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0-preview.1.26215.2" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.14.4" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.14.9" />
   </ItemGroup>
 
   <ItemGroup>

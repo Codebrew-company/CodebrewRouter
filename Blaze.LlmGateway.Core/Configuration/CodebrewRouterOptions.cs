@@ -20,13 +20,13 @@ public class CodebrewRouterOptions
     /// </summary>
     public Dictionary<string, string[]> FallbackRules { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Reasoning"]             = ["AzureFoundry", "GithubModels", "FoundryLocal"],
-        ["Coding"]                = ["GithubModels", "AzureFoundry", "FoundryLocal"],
-        ["Research"]              = ["AzureFoundry", "GithubModels", "FoundryLocal"],
-        ["VisionObjectDetection"] = ["AzureFoundry", "GithubModels", "FoundryLocal"],
-        ["Creative"]              = ["AzureFoundry", "GithubModels", "FoundryLocal"],
-        ["DataAnalysis"]          = ["AzureFoundry", "GithubModels", "FoundryLocal"],
-        ["General"]               = ["AzureFoundry", "GithubModels", "FoundryLocal"],
+        ["Reasoning"]             = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["Coding"]                = ["GithubModels", "AzureFoundry", "LmStudio"],
+        ["Research"]              = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["VisionObjectDetection"] = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["Creative"]              = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["DataAnalysis"]          = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["General"]               = ["AzureFoundry", "GithubModels", "LmStudio"],
     };
 
     /// <summary>

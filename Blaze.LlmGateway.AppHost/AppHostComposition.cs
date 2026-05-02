@@ -111,6 +111,7 @@ public static class AppHostComposition
 
         // ── API project — wire all resources ──
         var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("api")
+            .WithHttpEndpoint(port: 5022, name: "http")
             .WithReference(ghGpt4oMini)
             //.WithReference(ghPhi4Mini)
             .WithEnvironment("LlmGateway__Providers__FoundryLocal__Enabled", foundryLocalEnabled.ToString())
@@ -168,8 +169,6 @@ public static class AppHostComposition
                ctx.Urls.RemoveAll(u => !seen.Add($"{u.DisplayText ?? string.Empty}|{u.Url}"));
            });
 
-        api.WaitFor(ghGpt4oMini);
-        api.WaitFor(ghPhi4Mini);
 
         var enableOpenWebUi = builder.Configuration.GetValue("DevUI:OpenWebUI", defaultValue: true);
 
@@ -226,7 +225,7 @@ public static class AppHostComposition
         }
 
         builder.AddScalarApiReference()
-            .WithApiReference(api, "/openapi/v1.json");
+            .WithApiReference(api);
 
         aspireLogger.LogDebug("  ├─ API project configured with GitHub Models references");
         aspireLogger.LogDebug("  ├─ Dev UI playground(s) resolved (see flags above)");

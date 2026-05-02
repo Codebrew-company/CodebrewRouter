@@ -188,16 +188,16 @@ public class CodebrewRouterPerProviderTests
     }
 
     [Fact]
-    public async Task Coding_FallsBackToFoundryLocal_WhenGithubModelsAndAzureFoundryFail()
+    public async Task Coding_FallsBackToLmStudio_WhenGithubModelsAndAzureFoundryFail()
     {
         var githubModels = ClientThrowing();
         var azureFoundry = ClientThrowing();
-        var foundryLocal = ClientReturning("FoundryLocal fallback");
+        var lmStudio = ClientReturning("LmStudio fallback");
 
         var sp = new ServiceCollection()
             .AddKeyedSingleton<IChatClient>("GithubModels", githubModels.Object)
             .AddKeyedSingleton<IChatClient>("AzureFoundry", azureFoundry.Object)
-            .AddKeyedSingleton<IChatClient>("FoundryLocal", foundryLocal.Object)
+            .AddKeyedSingleton<IChatClient>("LmStudio", lmStudio.Object)
             .BuildServiceProvider();
 
         var router = CreateRouter(
@@ -208,7 +208,7 @@ public class CodebrewRouterPerProviderTests
 
         var result = await router.GetResponseAsync(UserMessages("Refactor this class"));
 
-        Assert.Equal("FoundryLocal fallback", result.Text);
+        Assert.Equal("LmStudio fallback", result.Text);
     }
 
     [Fact]
@@ -289,16 +289,16 @@ public class CodebrewRouterPerProviderTests
     }
 
     [Fact]
-    public async Task Reasoning_FallsBackToFoundryLocal_WhenAzureFoundryAndGithubModelsFail()
+    public async Task Reasoning_FallsBackToLmStudio_WhenAzureFoundryAndGithubModelsFail()
     {
         var azureFoundry = ClientThrowing();
         var githubModels = ClientThrowing();
-        var foundryLocal = ClientReturning("FoundryLocal reasoning fallback");
+        var lmStudio = ClientReturning("LmStudio reasoning fallback");
 
         var sp = new ServiceCollection()
             .AddKeyedSingleton<IChatClient>("AzureFoundry", azureFoundry.Object)
             .AddKeyedSingleton<IChatClient>("GithubModels", githubModels.Object)
-            .AddKeyedSingleton<IChatClient>("FoundryLocal", foundryLocal.Object)
+            .AddKeyedSingleton<IChatClient>("LmStudio", lmStudio.Object)
             .BuildServiceProvider();
 
         var router = CreateRouter(
@@ -309,7 +309,7 @@ public class CodebrewRouterPerProviderTests
 
         var result = await router.GetResponseAsync(UserMessages("Deduce the answer step by step"));
 
-        Assert.Equal("FoundryLocal reasoning fallback", result.Text);
+        Assert.Equal("LmStudio reasoning fallback", result.Text);
     }
 
     // ── TaskType.Research → AzureFoundry first ────────────────────────────────
@@ -401,16 +401,16 @@ public class CodebrewRouterPerProviderTests
     }
 
     [Fact]
-    public async Task General_FallsBackToFoundryLocal_WhenAzureFoundryAndGithubModelsFail()
+    public async Task General_FallsBackToLmStudio_WhenAzureFoundryAndGithubModelsFail()
     {
         var azureFoundry = ClientThrowing();
         var githubModels = ClientThrowing();
-        var foundryLocal = ClientReturning("FoundryLocal general fallback");
+        var lmStudio = ClientReturning("LmStudio general fallback");
 
         var sp = new ServiceCollection()
             .AddKeyedSingleton<IChatClient>("AzureFoundry", azureFoundry.Object)
             .AddKeyedSingleton<IChatClient>("GithubModels", githubModels.Object)
-            .AddKeyedSingleton<IChatClient>("FoundryLocal", foundryLocal.Object)
+            .AddKeyedSingleton<IChatClient>("LmStudio", lmStudio.Object)
             .BuildServiceProvider();
 
         var router = CreateRouter(
@@ -421,7 +421,7 @@ public class CodebrewRouterPerProviderTests
 
         var result = await router.GetResponseAsync(UserMessages("Hello, how are you?"));
 
-        Assert.Equal("FoundryLocal general fallback", result.Text);
+        Assert.Equal("LmStudio general fallback", result.Text);
     }
 
     // ── TaskType.Creative → AzureFoundry first ────────────────────────────────

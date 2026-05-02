@@ -42,6 +42,7 @@ builder.Services.Configure<LlmGatewayOptions>(
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<AzureFoundryModelDiscovery>();
+builder.Services.AddSingleton<LmStudioModelDiscovery>();
 builder.Services.AddSingleton<ModelAvailabilityRegistry>();
 builder.Services.AddSingleton<IModelAvailabilityRegistry>(sp => sp.GetRequiredService<ModelAvailabilityRegistry>());
 builder.Services.AddHostedService<ModelAvailabilityHeartbeatService>();

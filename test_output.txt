@@ -1,0 +1,36 @@
+Test run for E:\src\CodebrewRouter\Blaze.LlmGateway.Tests\bin\Debug\net10.0\Blaze.LlmGateway.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.15]     Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_AllAvailableModels_Streaming_EachRespondsWithContent [SKIP]
+[xUnit.net 00:00:00.16]     Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_Streaming_ModelRespondsWithContent [SKIP]
+[xUnit.net 00:00:00.16]     Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_NonStreaming_ModelRespondsWithContent [SKIP]
+  Skipped Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_AllAvailableModels_Streaming_EachRespondsWithContent [1 ms]
+  Skipped Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_Streaming_ModelRespondsWithContent [1 ms]
+  Skipped Blaze.LlmGateway.Tests.DadJokeIntegrationTests.DadJoke_NonStreaming_ModelRespondsWithContent [1 ms]
+[xUnit.net 00:00:00.47]     Blaze.LlmGateway.Tests.GithubModelsIntegrationTests.GithubModels_RealIntegration_ChatCompletions_Succeeds [SKIP]
+  Skipped Blaze.LlmGateway.Tests.GithubModelsIntegrationTests.GithubModels_RealIntegration_ChatCompletions_Succeeds [1 ms]
+[xUnit.net 00:00:00.54]     Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsConfiguredFallbackRules [FAIL]
+  Failed Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsConfiguredFallbackRules [15 ms]
+  Error Message:
+   Assert.Contains() Failure: Item not found in collection
+Collection: ["LmStudio", "LmStudio"]
+Not found:  "AzureFoundry"
+  Stack Trace:
+     at Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsConfiguredFallbackRules() in E:\src\CodebrewRouter\Blaze.LlmGateway.Tests\ModelsIntegrationTests.cs:line 351
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:00.63]     Blaze.LlmGateway.Tests.AzureFoundryIntegrationTests.AzureFoundry_RealIntegration_ChatCompletionsWithGpt4o_Succeeds [SKIP]
+  Skipped Blaze.LlmGateway.Tests.AzureFoundryIntegrationTests.AzureFoundry_RealIntegration_ChatCompletionsWithGpt4o_Succeeds [1 ms]
+[xUnit.net 00:00:00.66]     Blaze.LlmGateway.Tests.OllamaLocalIntegrationTests.OllamaLocal_RealIntegration_ChatCompletions_Succeeds [SKIP]
+  Skipped Blaze.LlmGateway.Tests.OllamaLocalIntegrationTests.OllamaLocal_RealIntegration_ChatCompletions_Succeeds [1 ms]
+[xUnit.net 00:00:00.84]     Blaze.LlmGateway.Tests.FoundryLocalIntegrationTests.FoundryLocal_RealIntegration_ChatCompletions_Succeeds [SKIP]
+  Skipped Blaze.LlmGateway.Tests.FoundryLocalIntegrationTests.FoundryLocal_RealIntegration_ChatCompletions_Succeeds [1 ms]
+[xUnit.net 00:00:00.90]     Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsBackingProviderModels [FAIL]
+  Failed Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsBackingProviderModels [4 ms]
+  Error Message:
+   Assert.Contains() Failure: Item not found in set
+Set:       ["LmStudio"]
+Not found: "AzureFoundry"
+  Stack Trace:
+     at Blaze.LlmGateway.Tests.ModelsIntegrationTests.CodebrewRouterModelDetails_ReturnsBackingProviderModels() in E:\src\CodebrewRouter\Blaze.LlmGateway.Tests\ModelsIntegrationTests.cs:line 370
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:   242, Skipped:     7, Total:   251, Duration: 787 ms - Blaze.LlmGateway.Tests.dll (net10.0)

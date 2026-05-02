@@ -296,9 +296,8 @@ public static class InfrastructureServiceExtensions
         => isConfigured ? sp.GetKeyedService<IChatClient>(key) : null;
 
     private static bool IsAzureFoundryConfigured(AzureFoundryOptions options)
-        => HasValue(options.Model) &&
-           (HasValue(options.ResponsesEndpoint) ||
-            (HasValue(options.Endpoint) && HasValue(options.ApiKey)));
+        => HasValue(options.Model) && HasValue(options.ApiKey) &&
+           (HasValue(options.ResponsesEndpoint) || HasValue(options.Endpoint));
 
     private static bool IsFoundryLocalConfigured(FoundryLocalOptions options)
         => options.Enabled && HasValue(options.Endpoint) && HasValue(options.Model);

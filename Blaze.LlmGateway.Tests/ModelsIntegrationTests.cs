@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Blaze.LlmGateway.Core.ModelCatalog;
+using Blaze.LlmGateway.Core.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -49,6 +51,13 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     services.AddKeyedSingleton<IChatClient>("OllamaLocal", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("LmStudio", mockChatClient.Object);
                     services.AddSingleton<IModelCatalog>(new FakeModelCatalog());
+                    
+                    // Configure LM Studio with a valid model for seeding/fallback rules
+                    // (Endpoint set empty to prevent discovery network calls in tests)
+                    services.Configure<LlmGatewayOptions>(options =>
+                    {
+                        options.Providers.LmStudio.Endpoint = "";
+                    });
                 });
             });
 
