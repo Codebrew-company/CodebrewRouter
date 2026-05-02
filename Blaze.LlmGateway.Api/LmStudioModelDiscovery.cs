@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Microsoft.Extensions.Logging;
 
@@ -28,9 +29,9 @@ public sealed class LmStudioModelDiscovery(
         try
         {
             // Normalize endpoint: LM Studio endpoints like "http://host:port/v1" should become ".../v1/models"
-            // Use Uri composition to safely append "models" without dropping the /v1 path
+            // Use proper path joining to preserve the /v1 segment
             var normalizedBase = endpoint.TrimEnd('/');
-            var modelsUrl = new Uri(new Uri(normalizedBase), "models").ToString();
+            var modelsUrl = normalizedBase.EndsWith("/models") ? normalizedBase : $"{normalizedBase}/models";
             
             logger.LogDebug("Querying LM Studio for available models at {Endpoint}", modelsUrl);
 
@@ -46,7 +47,11 @@ public sealed class LmStudioModelDiscovery(
             response.EnsureSuccessStatusCode();
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogDebug("LM Studio response body: {ResponseBody}", content.Substring(0, Math.Min(200, content.Length)));
+            
             var modelsData = System.Text.Json.JsonSerializer.Deserialize<ModelsListResponse>(content);
+            logger.LogDebug("Deserialized modelsData: {ModelsData}", modelsData != null ? "not null" : "null");
+            logger.LogDebug("Deserialized modelsData.Data: {DataCount}", modelsData?.Data?.Count ?? 0);
 
             if (modelsData?.Data == null)
             {
@@ -80,13 +85,19 @@ public sealed class LmStudioModelDiscovery(
 
     /// <summary>Internal DTO for LM Studio model list response (OpenAI-compatible format)</summary>
     private sealed record ModelsListResponse(
+        [property: JsonPropertyName("object")]
         string? Object,
+        [property: JsonPropertyName("data")]
         List<ModelData>? Data);
 
     /// <summary>Internal DTO for a single model entry</summary>
     private sealed record ModelData(
+        [property: JsonPropertyName("id")]
         string? Id,
+        [property: JsonPropertyName("object")]
         string? Object,
+        [property: JsonPropertyName("created")]
         long? Created,
+        [property: JsonPropertyName("owned_by")]
         string? OwnedBy);
 }
