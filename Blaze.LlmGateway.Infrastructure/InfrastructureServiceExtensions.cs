@@ -187,10 +187,20 @@ public static class InfrastructureServiceExtensions
 
         // Task classifier: Ollama-backed with keyword fallback (zero-latency on Ollama outage)
         services.AddSingleton<KeywordTaskClassifier>();
-        services.AddSingleton<ITaskClassifier>(sp => new OllamaTaskClassifier(
-            sp.GetRequiredKeyedService<IChatClient>("OllamaLocal"),
-            sp.GetRequiredService<KeywordTaskClassifier>(),
-            sp.GetRequiredService<ILogger<OllamaTaskClassifier>>()));
+        services.AddSingleton<ITaskClassifier>(sp =>
+        {
+            var ollamaLocal = sp.GetKeyedService<IChatClient>("OllamaLocal");
+            if (ollamaLocal is not null)
+            {
+                return new OllamaTaskClassifier(
+                    ollamaLocal,
+                    sp.GetRequiredService<KeywordTaskClassifier>(),
+                    sp.GetRequiredService<ILogger<OllamaTaskClassifier>>());
+            }
+            
+            // Fallback: return keyword-only classifier when Ollama not available
+            return sp.GetRequiredService<KeywordTaskClassifier>();
+        });
 
         // codebrewRouter keyed client — resolved by ModelSelectionResolver when model = "codebrewRouter"
         services.AddKeyedSingleton<IChatClient>("CodebrewRouter", (sp, _) =>

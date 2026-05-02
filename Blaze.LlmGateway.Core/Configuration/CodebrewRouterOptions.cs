@@ -16,17 +16,17 @@ public class CodebrewRouterOptions
     /// Maps each <c>TaskType</c> name to an ordered list of provider DI keys to try in sequence.
     /// If a provider key is absent from keyed DI, it is skipped.
     /// If a provider throws, the next key in the list is tried.
-    /// Falls back to <c>InnerClient</c> (AzureFoundry) when all entries are exhausted.
+    /// Falls back to <c>InnerClient</c> (LmStudio) when all entries are exhausted.
     /// </summary>
     public Dictionary<string, string[]> FallbackRules { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Reasoning"]             = ["AzureFoundry", "GithubModels", "LmStudio"],
-        ["Coding"]                = ["GithubModels", "AzureFoundry", "LmStudio"],
-        ["Research"]              = ["AzureFoundry", "GithubModels", "LmStudio"],
-        ["VisionObjectDetection"] = ["AzureFoundry", "GithubModels", "LmStudio"],
-        ["Creative"]              = ["AzureFoundry", "GithubModels", "LmStudio"],
-        ["DataAnalysis"]          = ["AzureFoundry", "GithubModels", "LmStudio"],
-        ["General"]               = ["AzureFoundry", "GithubModels", "LmStudio"],
+        ["Reasoning"]             = ["LmStudio"],
+        ["Coding"]                = ["LmStudio"],
+        ["Research"]              = ["LmStudio"],
+        ["VisionObjectDetection"] = ["LmStudio"],
+        ["Creative"]              = ["LmStudio"],
+        ["DataAnalysis"]          = ["LmStudio"],
+        ["General"]               = ["LmStudio"],
     };
 
     /// <summary>

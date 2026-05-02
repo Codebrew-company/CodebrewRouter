@@ -187,25 +187,11 @@ if (app.Environment.IsDevelopment())
 startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json");
 startupLogger.LogInformation("  ├─ Scalar available at /scalar");
 
-// Register health checks endpoint for Aspire readiness probes
-app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
-{
-    ResponseWriter = async (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(new
-        {
-            status = report.Status.ToString(),
-            checks = report.Entries.ToDictionary(e => e.Key, e => new { status = e.Value.Status.ToString() })
-        });
-    }
-});
-startupLogger.LogInformation("  ├─ Health checks endpoint available at /health (Aspire readiness probes)");
-
 // Register LiteLLM-compatible endpoints  
 app.RegisterLiteLlmEndpoints();
 
 app.MapDefaultEndpoints();
+startupLogger.LogInformation("  ├─ Health checks endpoint available at /health (Aspire readiness probes)");
 
 startupLogger.LogInformation("✅ Blaze.LlmGateway.Api startup complete");
 
