@@ -52,11 +52,13 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     services.AddKeyedSingleton<IChatClient>("LmStudio", mockChatClient.Object);
                     services.AddSingleton<IModelCatalog>(new FakeModelCatalog());
                     
-                    // Configure LM Studio with a valid model for seeding/fallback rules
-                    // (Endpoint set empty to prevent discovery network calls in tests)
+                    // Configure LM Studio with a valid endpoint for IsLmStudioConfigured check.
+                    // Discovery will fail gracefully (network timeout), but the chat probe
+                    // will use our mock client, so the provider ends up healthy in the registry.
                     services.Configure<LlmGatewayOptions>(options =>
                     {
-                        options.Providers.LmStudio.Endpoint = "";
+                        // LmStudio endpoint configured in appsettings.json will be loaded,
+                        // and discovery will fail gracefully when unreachable.
                     });
                 });
             });

@@ -583,7 +583,8 @@ public sealed class ModelAvailabilityHeartbeatService(
            !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsLmStudioConfigured(LmStudioOptions options)
-        => !string.IsNullOrWhiteSpace(options.Model);
+        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
+           !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsOptionalLocalProvider(string providerKey)
         => string.Equals(providerKey, "FoundryLocal", StringComparison.OrdinalIgnoreCase) ||

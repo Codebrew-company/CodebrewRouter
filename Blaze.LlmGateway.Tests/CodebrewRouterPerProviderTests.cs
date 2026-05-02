@@ -28,11 +28,11 @@ public class CodebrewRouterPerProviderTests
 {
     // ── Default FallbackRules from CodebrewRouterOptions ──────────────────────
     //
-    //   Coding:                GithubModels → AzureFoundry → FoundryLocal
+    //   Coding:                GithubModels → AzureFoundry → LmStudio
     //   Reasoning / Research
     //   Creative / DataAnalysis
     //   VisionObjectDetection
-    //   General:              AzureFoundry → GithubModels → FoundryLocal
+    //   General:              AzureFoundry → GithubModels → LmStudio
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
