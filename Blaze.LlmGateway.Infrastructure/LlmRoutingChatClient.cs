@@ -326,10 +326,7 @@ public class LlmRoutingChatClient : DelegatingChatClient
         var providers = _gatewayOptions.Value.Providers;
         var (maxContext, reservedOutput) = destination switch
         {
-            "AzureFoundry" => (providers.AzureFoundry.MaxContextTokens, providers.AzureFoundry.ReservedOutputTokens),
-            "FoundryLocal"  => (providers.FoundryLocal.MaxContextTokens,  providers.FoundryLocal.ReservedOutputTokens),
             "OllamaLocal"   => (providers.OllamaLocal.MaxContextTokens,   providers.OllamaLocal.ReservedOutputTokens),
-            "GithubModels"  => (providers.GithubModels.MaxContextTokens,  providers.GithubModels.ReservedOutputTokens),
             "LmStudio"      => (providers.LmStudio.MaxContextTokens,      providers.LmStudio.ReservedOutputTokens),
             _ => (int.MaxValue, 0)   // unknown → optimistic
         };

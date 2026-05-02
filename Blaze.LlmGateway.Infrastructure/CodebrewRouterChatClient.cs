@@ -83,7 +83,7 @@ public sealed class CodebrewRouterChatClient(
         }
 
         logger.LogWarning("⚠️ codebrewRouter all providers exhausted for {TaskType} — using InnerClient", taskType);
-        var innerMessages = await PrepareMessagesForProviderAsync("AzureFoundry", cleanedMessages, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync("LmStudio", cleanedMessages, options, cancellationToken)
             ?? cleanedMessages;
         return await InnerClient.GetResponseAsync(innerMessages, options, cancellationToken);
     }
@@ -155,7 +155,7 @@ public sealed class CodebrewRouterChatClient(
         }
 
         logger.LogWarning("⚠️ codebrewRouter all streaming providers exhausted for {TaskType} — probing InnerClient", taskType);
-        var innerMessages = await PrepareMessagesForProviderAsync("AzureFoundry", cleanedMessages, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync("LmStudio", cleanedMessages, options, cancellationToken)
             ?? cleanedMessages;
         var innerResult = await TryGetFirstChunkAsync(InnerClient, innerMessages, options, cancellationToken);
         if (!innerResult.Success)
@@ -314,11 +314,7 @@ public sealed class CodebrewRouterChatClient(
 
         return providerKey switch
         {
-            "AzureFoundry" => HasValue(providers.AzureFoundry.Model) &&
-                              (HasValue(providers.AzureFoundry.ResponsesEndpoint) || HasValue(providers.AzureFoundry.Endpoint)) &&
-                              availabilityRegistry.IsProviderAvailable("AzureFoundry"),
-            "FoundryLocal" => providers.FoundryLocal.Enabled && HasValue(providers.FoundryLocal.Endpoint) && HasValue(providers.FoundryLocal.Model) && availabilityRegistry.IsProviderAvailable("FoundryLocal"),
-            "GithubModels" => HasValue(providers.GithubModels.Endpoint) && HasValue(providers.GithubModels.Model) && HasValue(providers.GithubModels.ApiKey) && availabilityRegistry.IsProviderAvailable("GithubModels"),
+            "LmStudio" => HasValue(providers.LmStudio.Endpoint) && HasValue(providers.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"),
             "OllamaLocal" => HasValue(providers.OllamaLocal.BaseUrl) && HasValue(providers.OllamaLocal.Model) && availabilityRegistry.IsProviderAvailable("OllamaLocal"),
             _ => true
         };
@@ -330,24 +326,12 @@ public sealed class CodebrewRouterChatClient(
 
         switch (providerKey)
         {
-            case "AzureFoundry":
+            case "LmStudio":
                 budget = new ProviderContextBudget(
-                    providers.AzureFoundry.Model,
-                    providers.AzureFoundry.MaxContextTokens,
-                    providers.AzureFoundry.ReservedOutputTokens);
-                return HasValue(providers.AzureFoundry.Model) && providers.AzureFoundry.MaxContextTokens > 0;
-            case "FoundryLocal":
-                budget = new ProviderContextBudget(
-                    providers.FoundryLocal.Model,
-                    providers.FoundryLocal.MaxContextTokens,
-                    providers.FoundryLocal.ReservedOutputTokens);
-                return HasValue(providers.FoundryLocal.Model) && providers.FoundryLocal.MaxContextTokens > 0;
-            case "GithubModels":
-                budget = new ProviderContextBudget(
-                    providers.GithubModels.Model,
-                    providers.GithubModels.MaxContextTokens,
-                    providers.GithubModels.ReservedOutputTokens);
-                return HasValue(providers.GithubModels.Model) && providers.GithubModels.MaxContextTokens > 0;
+                    providers.LmStudio.Model,
+                    providers.LmStudio.MaxContextTokens,
+                    providers.LmStudio.ReservedOutputTokens);
+                return HasValue(providers.LmStudio.Model) && providers.LmStudio.MaxContextTokens > 0;
             case "OllamaLocal":
                 budget = new ProviderContextBudget(
                     providers.OllamaLocal.Model,

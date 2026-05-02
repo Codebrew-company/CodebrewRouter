@@ -21,17 +21,6 @@ public static class AppHostComposition
         aspireLogger.LogDebug("  ├─ Wiring resources and dependencies");
 
         // ── Parameter-based secrets and non-secret provider settings ──
-        var azureFoundryEndpoint = builder.AddParameter("azure-foundry-endpoint");
-        var azureFoundryApiKey = builder.AddParameter("azure-foundry-api-key", secret: true);
-        var githubModelsApiKey = builder.AddParameter("github-models-api-key", secret: true);
-        var azureFoundryEndpointAlias = builder.Configuration["COPILOT_FOUNDRY_AZURE_BASE_URL"];
-        var azureFoundryResponsesEndpoint = builder.Configuration.GetValue(
-            "LlmGateway:Providers:AzureFoundry:ResponsesEndpoint",
-            "https://codebrew-resource.services.ai.azure.com/api/projects/codebrew/openai/v1/responses");
-        var azureFoundryResponsesEndpointAlias = builder.Configuration["COPILOT_FOUNDRY_RESPONSES_ENDPOINT"];
-        var azureFoundryApiKeyAlias = builder.Configuration["COPILOT_AZURE_API_KEY"];
-        var azureFoundryModelAlias = builder.Configuration["COPILOT_FOUNDRY_DEFAULT_MODEL"]
-            ?? builder.Configuration["COPILOT_FOUNDRY_GENERAL_MODEL"];
         var foundryLocalEnabled = builder.Configuration.GetValue(
             "LlmGateway:Providers:FoundryLocal:Enabled",
             false);
@@ -103,19 +92,10 @@ public static class AppHostComposition
             aspireLogger.LogInformation("  ├─ Foundry Local: disabled (set LlmGateway:Providers:FoundryLocal:Enabled=true to enable)");
         }
 
-        // ── GitHub Models ──
-        var ghGpt4oMini = builder.AddGitHubModel("gh-gpt4o-mini", "openai/gpt-4o-mini")
-            .WithApiKey(githubModelsApiKey);
-        var ghPhi4Mini = builder.AddGitHubModel("gh-phi4-mini", "microsoft/phi-4-mini-instruct")
-            .WithApiKey(githubModelsApiKey);
-
         // ── API project — wire all resources ──
         var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("api")
             .WithHttpEndpoint(port: 5022, name: "http")
-            .WithReference(ghGpt4oMini)
-            //.WithReference(ghPhi4Mini)
             .WithEnvironment("LlmGateway__Providers__FoundryLocal__Enabled", foundryLocalEnabled.ToString())
-            .WithEnvironment("LlmGateway__Providers__GithubModels__ApiKey", githubModelsApiKey)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaLocalBaseUrl)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
@@ -125,35 +105,6 @@ public static class AppHostComposition
         {
             api.WaitFor(foundryLocalConnectionString)
                .WithReference(foundryLocalConnectionString);
-        }
-
-        if (string.IsNullOrWhiteSpace(azureFoundryEndpointAlias))
-        {
-            api.WithEnvironment("LlmGateway__Providers__AzureFoundry__Endpoint", azureFoundryEndpoint);
-        }
-        else
-        {
-            api.WithEnvironment("LlmGateway__Providers__AzureFoundry__Endpoint", azureFoundryEndpointAlias);
-        }
-
-        api.WithEnvironment(
-            "LlmGateway__Providers__AzureFoundry__ResponsesEndpoint",
-            string.IsNullOrWhiteSpace(azureFoundryResponsesEndpointAlias)
-                ? azureFoundryResponsesEndpoint
-                : azureFoundryResponsesEndpointAlias);
-
-        if (string.IsNullOrWhiteSpace(azureFoundryApiKeyAlias))
-        {
-            api.WithEnvironment("LlmGateway__Providers__AzureFoundry__ApiKey", azureFoundryApiKey);
-        }
-        else
-        {
-            api.WithEnvironment("LlmGateway__Providers__AzureFoundry__ApiKey", azureFoundryApiKeyAlias);
-        }
-
-        if (!string.IsNullOrWhiteSpace(azureFoundryModelAlias))
-        {
-            api.WithEnvironment("LlmGateway__Providers__AzureFoundry__Model", azureFoundryModelAlias);
         }
 
         if (!string.IsNullOrWhiteSpace(gatewayListenUrls))
@@ -227,7 +178,6 @@ public static class AppHostComposition
         builder.AddScalarApiReference()
             .WithApiReference(api);
 
-        aspireLogger.LogDebug("  ├─ API project configured with GitHub Models references");
         aspireLogger.LogDebug("  ├─ Dev UI playground(s) resolved (see flags above)");
         aspireLogger.LogDebug("  └─ Scalar API Reference configured for dashboard");
         aspireLogger.LogInformation("✅ Aspire orchestration ready - building distributed app");

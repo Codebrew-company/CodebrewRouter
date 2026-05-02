@@ -5,13 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OllamaSharp;
 
 namespace Blaze.LlmGateway.Api;
 
 public sealed class ModelAvailabilityHeartbeatService(
     IServiceProvider serviceProvider,
     IOptions<LlmGatewayOptions> options,
-    AzureFoundryModelDiscovery azureFoundryModelDiscovery,
     LmStudioModelDiscovery lmStudioModelDiscovery,
     ModelAvailabilityRegistry registry,
     ILogger<ModelAvailabilityHeartbeatService> logger) : IHostedService, IDisposable
@@ -103,33 +103,10 @@ public sealed class ModelAvailabilityHeartbeatService(
         // Seed configured models first for fallback/visibility
         SeedConfiguredModels(models, providers, checkedAt);
 
-        // Then probe to update with discovered/validated state
-        await ProbeAzureFoundryAsync(models, providers, checkedAt, cancellationToken);
+        // Probe local models only (local-BYOK approach)
         await ProbeLmStudioAsync(models, providers, checkedAt, cancellationToken);
-        await ProbeChatProviderAsync(
-            providerKey: "FoundryLocal",
-            modelId: _options.Providers.FoundryLocal.Model,
-            endpoint: _options.Providers.FoundryLocal.Endpoint,
-            ownedBy: "openai",
-            isConfigured: IsFoundryLocalConfigured(_options.Providers.FoundryLocal),
-            checkedAt,
-            models,
-            providers,
-            cancellationToken);
-        await ProbeChatProviderAsync(
-            providerKey: "GithubModels",
-            modelId: _options.Providers.GithubModels.Model,
-            endpoint: _options.Providers.GithubModels.Endpoint,
-            ownedBy: "github",
-            isConfigured: IsGithubModelsConfigured(_options.Providers.GithubModels),
-            checkedAt,
-            models,
-            providers,
-            cancellationToken);
-        await ProbeChatProviderAsync(
-            providerKey: "OllamaLocal",
+        await ProbeOllamaWithFailoverAsync(
             modelId: _options.Providers.OllamaLocal.Model,
-            endpoint: _options.Providers.OllamaLocal.BaseUrl,
             ownedBy: "ollama",
             isConfigured: IsOllamaLocalConfigured(_options.Providers.OllamaLocal),
             checkedAt,
@@ -153,33 +130,7 @@ public sealed class ModelAvailabilityHeartbeatService(
         ICollection<ProviderAvailabilitySnapshot> providers,
         DateTimeOffset checkedAt)
     {
-        AddConfiguredModel(
-            models,
-            providers,
-            "AzureFoundry",
-            _options.Providers.AzureFoundry.Model,
-            "openai",
-            _options.Providers.AzureFoundry.Endpoint,
-            IsAzureFoundryConfigured(_options.Providers.AzureFoundry),
-            checkedAt);
-        AddConfiguredModel(
-            models,
-            providers,
-            "FoundryLocal",
-            _options.Providers.FoundryLocal.Model,
-            "openai",
-            _options.Providers.FoundryLocal.Endpoint,
-            IsFoundryLocalConfigured(_options.Providers.FoundryLocal),
-            checkedAt);
-        AddConfiguredModel(
-            models,
-            providers,
-            "GithubModels",
-            _options.Providers.GithubModels.Model,
-            "github",
-            _options.Providers.GithubModels.Endpoint,
-            IsGithubModelsConfigured(_options.Providers.GithubModels),
-            checkedAt);
+        // Seed local-only models (BYOK approach — no cloud providers)
         AddConfiguredModel(
             models,
             providers,
@@ -200,111 +151,6 @@ public sealed class ModelAvailabilityHeartbeatService(
             checkedAt);
 
         AddCodebrewRouterModel(models, providers, checkedAt);
-    }
-
-    private async Task ProbeAzureFoundryAsync(
-        ICollection<AvailableModel> models,
-        ICollection<ProviderAvailabilitySnapshot> providers,
-        DateTimeOffset checkedAt,
-        CancellationToken cancellationToken)
-    {
-        var azureOptions = _options.Providers.AzureFoundry;
-        if (!IsAzureFoundryConfigured(azureOptions))
-        {
-            return;
-        }
-
-        try
-        {
-            var discoveredModels = new List<AvailableModel>();
-            
-            if (!string.IsNullOrWhiteSpace(azureOptions.Endpoint))
-            {
-                using var timeoutCts = CreateTimeoutToken(cancellationToken);
-                var discoveryResult = await azureFoundryModelDiscovery.TryDiscoverModelsAsync(
-                    azureOptions.Endpoint,
-                    azureOptions.ApiKey,
-                    timeoutCts.Token);
-
-                if (discoveryResult.Success && discoveryResult.Models.Count > 0)
-                {
-                    discoveredModels = discoveryResult.Models.ToList();
-                    logger.LogDebug("Discovered {Count} models from Azure Foundry", discoveredModels.Count);
-                }
-            }
-
-            // Probe chat with configured model to validate provider health
-            using var chatTimeoutCts = CreateTimeoutToken(cancellationToken);
-            using var scope = serviceProvider.CreateScope();
-            var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>("AzureFoundry");
-            var response = await client.GetResponseAsync(
-                [new ChatMessage(ChatRole.User, "ping")],
-                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
-                chatTimeoutCts.Token);
-
-            // Chat probe succeeded — mark provider and models as enabled
-            providers.Add(new ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt));
-            
-            if (discoveredModels.Count > 0)
-            {
-                // Add discovered models as enabled
-                foreach (var discoveredModel in discoveredModels)
-                {
-                    models.Add(discoveredModel with
-                    {
-                        Enabled = true,
-                        ErrorMessage = null,
-                        LastCheckedUtc = checkedAt
-                    });
-                }
-
-                // If configured model is not in discovered list, add it too for backward compat
-                if (!discoveredModels.Any(m => string.Equals(m.Id, azureOptions.Model, StringComparison.OrdinalIgnoreCase)) &&
-                    !string.IsNullOrWhiteSpace(azureOptions.Model))
-                {
-                    models.Add(new AvailableModel(
-                        azureOptions.Model,
-                        "AzureFoundry",
-                        "openai",
-                        "configured",
-                        azureOptions.Endpoint,
-                        Enabled: true,
-                        LastCheckedUtc: checkedAt));
-                }
-            }
-            else
-            {
-                // No discovered models — fall back to configured model
-                models.Add(new AvailableModel(
-                    azureOptions.Model,
-                    "AzureFoundry",
-                    "openai",
-                    "configured",
-                    azureOptions.Endpoint,
-                    Enabled: true,
-                    LastCheckedUtc: checkedAt));
-            }
-
-            logger.LogDebug(
-                "Availability probe succeeded for AzureFoundry with model {Model}. Response length: {Length}",
-                azureOptions.Model,
-                response.Text?.Length ?? 0);
-        }
-        catch (Exception ex)
-        {
-            var error = GetErrorMessage(ex);
-            logger.LogWarning(ex, "AzureFoundry availability probe failed: {Error}", error);
-            providers.Add(new ProviderAvailabilitySnapshot("AzureFoundry", false, error, checkedAt));
-            models.Add(new AvailableModel(
-                azureOptions.Model,
-                "AzureFoundry",
-                "openai",
-                "configured",
-                azureOptions.Endpoint,
-                Enabled: false,
-                ErrorMessage: error,
-                LastCheckedUtc: checkedAt));
-        }
     }
 
     private async Task ProbeLmStudioAsync(
@@ -422,10 +268,8 @@ public sealed class ModelAvailabilityHeartbeatService(
         }
     }
 
-    private async Task ProbeChatProviderAsync(
-        string providerKey,
+    private async Task ProbeOllamaWithFailoverAsync(
         string modelId,
-        string? endpoint,
         string ownedBy,
         bool isConfigured,
         DateTimeOffset checkedAt,
@@ -438,57 +282,111 @@ public sealed class ModelAvailabilityHeartbeatService(
             return;
         }
 
-        try
-        {
-            using var timeoutCts = CreateTimeoutToken(cancellationToken);
-            using var scope = serviceProvider.CreateScope();
-            var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>(providerKey);
-            var response = await client.GetResponseAsync(
-                [new ChatMessage(ChatRole.User, "ping")],
-                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
-                timeoutCts.Token);
+        const string primaryEndpoint = "http://192.168.16.53:11434";
+        const string fallbackEndpoint = "http://192.168.16.12:11434";
+        const string providerKey = "OllamaLocal";
 
+        // Try primary endpoint first
+        logger.LogInformation("Probing primary Ollama @ {PrimaryEndpoint}", primaryEndpoint);
+        var (primaryHealthy, primaryError) = await TryProbeOllamaEndpointAsync(
+            providerKey,
+            primaryEndpoint,
+            cancellationToken);
+
+        if (primaryHealthy)
+        {
+            logger.LogInformation("Primary Ollama {PrimaryEndpoint} is healthy", primaryEndpoint);
             providers.Add(new ProviderAvailabilitySnapshot(providerKey, true, null, checkedAt));
             models.Add(new AvailableModel(
                 modelId,
                 providerKey,
                 ownedBy,
                 "configured",
-                endpoint,
+                primaryEndpoint,
                 Enabled: true,
                 LastCheckedUtc: checkedAt));
-
-            logger.LogDebug(
-                "Availability probe succeeded for {Provider} with model {Model}. Response length: {Length}",
-                providerKey,
-                modelId,
-                response.Text?.Length ?? 0);
+            return;
         }
-        catch (Exception ex)
-        {
-            var error = GetErrorMessage(ex);
-            if (IsOptionalLocalProvider(providerKey))
-            {
-                logger.LogInformation(
-                    "Availability probe failed for optional local provider {Provider}: {Error}",
-                    providerKey,
-                    error);
-            }
-            else
-            {
-                logger.LogWarning(ex, "Availability probe failed for {Provider}: {Error}", providerKey, error);
-            }
 
-            providers.Add(new ProviderAvailabilitySnapshot(providerKey, false, error, checkedAt));
+        // Primary failed, try fallback
+        logger.LogWarning(
+            "Primary Ollama unavailable ({PrimaryEndpoint}): {PrimaryError}. Trying fallback @ {FallbackEndpoint}",
+            primaryEndpoint,
+            primaryError,
+            fallbackEndpoint);
+
+        var (fallbackHealthy, fallbackError) = await TryProbeOllamaEndpointAsync(
+            providerKey,
+            fallbackEndpoint,
+            cancellationToken);
+
+        if (fallbackHealthy)
+        {
+            logger.LogInformation("Fallback Ollama {FallbackEndpoint} is healthy", fallbackEndpoint);
+            providers.Add(new ProviderAvailabilitySnapshot(providerKey, true, null, checkedAt));
             models.Add(new AvailableModel(
                 modelId,
                 providerKey,
                 ownedBy,
                 "configured",
-                endpoint,
-                Enabled: false,
-                ErrorMessage: error,
+                fallbackEndpoint,
+                Enabled: true,
                 LastCheckedUtc: checkedAt));
+            return;
+        }
+
+        // Both failed
+        var bothFailedError = $"Primary ({primaryError}); Fallback ({fallbackError})";
+        logger.LogWarning(
+            "Both Ollama instances unavailable. Primary ({PrimaryEndpoint}): {PrimaryError}. Fallback ({FallbackEndpoint}): {FallbackError}",
+            primaryEndpoint,
+            primaryError,
+            fallbackEndpoint,
+            fallbackError);
+
+        providers.Add(new ProviderAvailabilitySnapshot(providerKey, false, bothFailedError, checkedAt));
+        models.Add(new AvailableModel(
+            modelId,
+            providerKey,
+            ownedBy,
+            "configured",
+            fallbackEndpoint, // Use fallback as the last-known endpoint
+            Enabled: false,
+            ErrorMessage: bothFailedError,
+            LastCheckedUtc: checkedAt));
+    }
+
+    private async Task<(bool Healthy, string Error)> TryProbeOllamaEndpointAsync(
+        string providerKey,
+        string ollamaEndpoint,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeoutCts = CreateTimeoutToken(cancellationToken);
+            
+            // Create a temporary OllamaApiClient for the specified endpoint and probe with the configured model.
+            // OllamaApiClient(Uri endpoint, string model) constructor creates a client targeting that endpoint.
+            var ollamaClient = (IChatClient)new OllamaApiClient(new Uri(ollamaEndpoint), _options.Providers.OllamaLocal.Model);
+
+            var response = await ollamaClient.GetResponseAsync(
+                [new ChatMessage(ChatRole.User, "ping")],
+                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
+                timeoutCts.Token);
+
+            logger.LogDebug(
+                "Ollama probe succeeded for {Endpoint} with model {Model}. Response length: {Length}",
+                ollamaEndpoint,
+                _options.Providers.OllamaLocal.Model,
+                response.Text?.Length ?? 0);
+
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            var error = GetErrorMessage(ex);
+            logger.LogDebug("Ollama probe failed for {Endpoint}: {Error}", ollamaEndpoint, error);
+            return (false, error);
         }
     }
 
@@ -561,22 +459,6 @@ public sealed class ModelAvailabilityHeartbeatService(
 
     private static string GetErrorMessage(Exception exception)
         => exception.GetBaseException().Message;
-
-    private static bool IsAzureFoundryConfigured(AzureFoundryOptions options)
-        => !string.IsNullOrWhiteSpace(options.Model) &&
-           !string.IsNullOrWhiteSpace(options.ApiKey) &&
-           (!string.IsNullOrWhiteSpace(options.ResponsesEndpoint) ||
-            !string.IsNullOrWhiteSpace(options.Endpoint));
-
-    private static bool IsFoundryLocalConfigured(FoundryLocalOptions options)
-        => options.Enabled &&
-           !string.IsNullOrWhiteSpace(options.Endpoint) &&
-           !string.IsNullOrWhiteSpace(options.Model);
-
-    private static bool IsGithubModelsConfigured(GithubModelsOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
-           !string.IsNullOrWhiteSpace(options.Model) &&
-           !string.IsNullOrWhiteSpace(options.ApiKey);
 
     private static bool IsOllamaLocalConfigured(OllamaLocalOptions options)
         => !string.IsNullOrWhiteSpace(options.BaseUrl) &&

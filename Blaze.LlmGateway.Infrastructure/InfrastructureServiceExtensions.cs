@@ -1,6 +1,3 @@
-using Azure;
-using Azure.AI.OpenAI;
-using Azure.Identity;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.TaskRouting;
@@ -22,59 +19,6 @@ public static class InfrastructureServiceExtensions
 {
     public static IServiceCollection AddLlmProviders(this IServiceCollection services)
     {
-        // AzureFoundry — DefaultAzureCredential or ApiKey depending on config
-        services.AddKeyedSingleton<IChatClient>("AzureFoundry", (sp, _) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.AzureFoundry;
-            var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-            var compactor     = sp.GetRequiredService<IContextCompactor>();
-            var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-            var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
-
-            if (!string.IsNullOrWhiteSpace(opts.ResponsesEndpoint))
-            {
-                return new FoundryResponsesChatClient(
-                        opts,
-                        sp.GetRequiredService<ILogger<FoundryResponsesChatClient>>())
-                    .AsBuilder()
-                    .UseFunctionInvocation()
-                    .UseContextSizing(tokenCounter, compactor, sizingOptions,
-                        opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                    .Build();
-            }
-
-            AzureOpenAIClient azureClient = string.IsNullOrWhiteSpace(opts.ApiKey)
-                ? new AzureOpenAIClient(new Uri(opts.Endpoint), new DefaultAzureCredential())
-                : new AzureOpenAIClient(new Uri(opts.Endpoint), new AzureKeyCredential(opts.ApiKey));
-            return azureClient.GetChatClient(opts.Model).AsIChatClient()
-                .AsBuilder()
-                .UseFunctionInvocation()
-                .UseContextSizing(tokenCounter, compactor, sizingOptions,
-                    opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                .Build();
-        });
-
-        // FoundryLocal — Azure Foundry Local exposes an OpenAI-compatible endpoint at /v1.
-        // Use OpenAIClient (NOT AzureOpenAIClient) so request paths stay OpenAI-shaped.
-        services.AddKeyedSingleton<IChatClient>("FoundryLocal", (sp, _) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.FoundryLocal;
-            var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-            var compactor     = sp.GetRequiredService<IContextCompactor>();
-            var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-            var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
-            var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
-            var client = new OpenAIClient(
-                new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
-            return client.GetChatClient(opts.Model).AsIChatClient()
-                .AsBuilder()
-                .UseFunctionInvocation()
-                .UseContextSizing(tokenCounter, compactor, sizingOptions,
-                    opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                .Build();
-        });
-
         // OllamaLocal — local Ollama container (backup for remote server)
         services.AddKeyedSingleton<IChatClient>("OllamaLocal", (sp, _) =>
         {
@@ -84,30 +28,6 @@ public static class InfrastructureServiceExtensions
             var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
             var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
             return ((IChatClient)new OllamaApiClient(new Uri(opts.BaseUrl), opts.Model))
-                .AsBuilder()
-                .UseFunctionInvocation()
-                .UseContextSizing(tokenCounter, compactor, sizingOptions,
-                    opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                .Build();
-        });
-
-        // GithubModels — GitHub Models API (OpenAI-compatible endpoint)
-        services.AddKeyedSingleton<IChatClient>("GithubModels", (sp, _) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.GithubModels;
-            if (string.IsNullOrWhiteSpace(opts.ApiKey))
-            {
-                throw new InvalidOperationException("GithubModels requires API key in LlmGateway:Providers:GithubModels:ApiKey");
-            }
-            var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-            var compactor     = sp.GetRequiredService<IContextCompactor>();
-            var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-            var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
-            // GitHub Models uses OpenAI-compatible API; use AzureOpenAIClient with custom endpoint
-            var client = new AzureOpenAIClient(
-                new Uri(opts.Endpoint),
-                new AzureKeyCredential(opts.ApiKey));
-            return client.GetChatClient(opts.Model).AsIChatClient()
                 .AsBuilder()
                 .UseFunctionInvocation()
                 .UseContextSizing(tokenCounter, compactor, sizingOptions,
@@ -182,10 +102,8 @@ public static class InfrastructureServiceExtensions
             var providerOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers;
             var availabilityRegistry = sp.GetRequiredService<IModelAvailabilityRegistry>();
             var fallback =
-                GetConfiguredKeyedClient(sp, "GithubModels", IsGithubModelsConfigured(providerOptions.GithubModels) && availabilityRegistry.IsProviderAvailable("GithubModels"))
-                ?? GetConfiguredKeyedClient(sp, "AzureFoundry", IsAzureFoundryConfigured(providerOptions.AzureFoundry) && availabilityRegistry.IsProviderAvailable("AzureFoundry"))
-                ?? GetConfiguredKeyedClient(sp, "FoundryLocal", IsFoundryLocalConfigured(providerOptions.FoundryLocal) && availabilityRegistry.IsProviderAvailable("FoundryLocal"))
-                ?? GetConfiguredKeyedClient(sp, "LmStudio", IsLmStudioConfigured(providerOptions.LmStudio) && availabilityRegistry.IsProviderAvailable("LmStudio"))
+                GetConfiguredKeyedClient(sp, "LmStudio", IsLmStudioConfigured(providerOptions.LmStudio) && availabilityRegistry.IsProviderAvailable("LmStudio"))
+                ?? GetConfiguredKeyedClient(sp, "OllamaLocal", IsOllamaLocalConfigured(providerOptions.OllamaLocal) && availabilityRegistry.IsProviderAvailable("OllamaLocal"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
              
             var strategy = sp.GetRequiredService<IRoutingStrategy>();
@@ -275,9 +193,9 @@ public static class InfrastructureServiceExtensions
             (IChatClient)new CodebrewRouterChatClient(
                 GetConfiguredKeyedClient(
                     sp,
-                    "AzureFoundry",
-                    IsAzureFoundryConfigured(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.AzureFoundry) &&
-                    sp.GetRequiredService<IModelAvailabilityRegistry>().IsProviderAvailable("AzureFoundry"))
+                    "LmStudio",
+                    IsLmStudioConfigured(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.LmStudio) &&
+                    sp.GetRequiredService<IModelAvailabilityRegistry>().IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available backing provider is available for codebrewRouter."),
                 sp.GetRequiredService<ITaskClassifier>(),
                 sp.GetRequiredService<IPromptCleaner>(),
@@ -295,15 +213,8 @@ public static class InfrastructureServiceExtensions
     private static IChatClient? GetConfiguredKeyedClient(IServiceProvider sp, string key, bool isConfigured)
         => isConfigured ? sp.GetKeyedService<IChatClient>(key) : null;
 
-    private static bool IsAzureFoundryConfigured(AzureFoundryOptions options)
-        => HasValue(options.Model) && HasValue(options.ApiKey) &&
-           (HasValue(options.ResponsesEndpoint) || HasValue(options.Endpoint));
-
-    private static bool IsFoundryLocalConfigured(FoundryLocalOptions options)
-        => options.Enabled && HasValue(options.Endpoint) && HasValue(options.Model);
-
-    private static bool IsGithubModelsConfigured(GithubModelsOptions options)
-        => HasValue(options.Endpoint) && HasValue(options.Model) && HasValue(options.ApiKey);
+    private static bool IsOllamaLocalConfigured(OllamaLocalOptions options)
+        => !string.IsNullOrWhiteSpace(options.BaseUrl) && !string.IsNullOrWhiteSpace(options.Model);
 
     private static bool IsLmStudioConfigured(LmStudioOptions options)
         => HasValue(options.Endpoint) && HasValue(options.Model);
