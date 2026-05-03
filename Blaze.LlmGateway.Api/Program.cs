@@ -13,6 +13,13 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Scalar.AspNetCore;
 
+// Allow self-signed HTTPS certificates for local development
+// HTTPS endpoints (e.g., codellama.local.codebrewco.net) with self-signed certs will work
+#pragma warning disable CS0618
+System.Net.ServicePointManager.ServerCertificateValidationCallback +=
+    (sender, cert, chain, sslPolicyErrors) => true;
+#pragma warning restore CS0618
+
 var builder = WebApplication.CreateBuilder(args);
 
 FoundryConfigurationAliases.AddFoundryEnvironmentAliases(builder.Configuration);

@@ -131,20 +131,21 @@ public static class InfrastructureServiceExtensions
 
             logger.LogInformation("📍 Lazy-initializing OllamaRouter keyed client");
 
-            // DON'T create OllamaApiClient during DI registration; defer to first use via Lazy<T>
-            // Creating them here was causing the startup hang due to connection validation
+            // Create OllamaApiClient instances with extended timeout for large models
+            // .12 may be running gemma4:26b (26 billion parameters) which can take 30+ seconds per inference
+            var longTimeout = TimeSpan.FromSeconds(180); // 3 minutes for very large models
             
-            // WORKAROUND: Use a direct HTTP-based fallback in the OllamaFailoverClient constructor
-            // that doesn't hang during instantiation
-            var primaryClient = new OllamaApiClient(
+            var primaryClient = OllamaClientExtensions.CreateWithTimeout(
                 new Uri(ollamaRouterOptions.PrimaryEndpoint),
-                ollamaRouterOptions.Model);
+                ollamaRouterOptions.Model,
+                longTimeout);
 
-            var fallbackClient = new OllamaApiClient(
+            var fallbackClient = OllamaClientExtensions.CreateWithTimeout(
                 new Uri(ollamaRouterOptions.FallbackEndpoint),
-                ollamaRouterOptions.Model);
+                ollamaRouterOptions.Model,
+                longTimeout);
 
-            logger.LogInformation("✅ Ollama clients created");
+            logger.LogInformation("✅ Ollama clients created with 180-second timeout for large model inference");
 
             // Create failover wrapper that uses cached clients
             var failoverClient = new OllamaFailoverClient(
