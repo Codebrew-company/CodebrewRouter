@@ -96,13 +96,28 @@ public sealed class CodebrewRouterChatClient(
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var globalSw = System.Diagnostics.Stopwatch.StartNew();
+        logger.LogInformation("🎬 [ROUTER-STREAM-START] GetStreamingResponseAsync entry - messages count: {Count}", 
+            (chatMessages as IList<ChatMessage>)?.Count ?? (chatMessages as IEnumerable<ChatMessage>)?.Count() ?? 0);
+        
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
+        
+        var cleanSw = System.Diagnostics.Stopwatch.StartNew();
         var cleanedMessages = await CleanMessagesAsync(messageList, cancellationToken);
+        cleanSw.Stop();
+        logger.LogInformation("✅ [ROUTER-CLEAN] CleanMessagesAsync completed in {Ms}ms", cleanSw.ElapsedMilliseconds);
+        
+        var resolveSw = System.Diagnostics.Stopwatch.StartNew();
         var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, cancellationToken);
+        resolveSw.Stop();
+        logger.LogInformation("✅ [ROUTER-RESOLVE] ResolveAsync completed in {Ms}ms - TaskType: {TaskType}, Providers: {ProviderCount}", 
+            resolveSw.ElapsedMilliseconds, taskType, providers.Length);
 
         for (var i = 0; i < providers.Length; i++)
         {
             var key = providers[i];
+            logger.LogInformation("🔍 [ROUTER-PROVIDER-{Index}] Checking keyed service for provider: {Key}", i, key);
+            
             var client = serviceProvider.GetKeyedService<IChatClient>(key);
             if (client is null)
             {
@@ -110,19 +125,29 @@ public sealed class CodebrewRouterChatClient(
                 continue;
             }
 
+            logger.LogInformation("📨 [ROUTER-PREPARE-{Index}] PrepareMessagesForProvider for {Key}", i, key);
+            var prepSw = System.Diagnostics.Stopwatch.StartNew();
             var providerMessages = await PrepareMessagesForProviderAsync(key, cleanedMessages, options, cancellationToken);
+            prepSw.Stop();
+            logger.LogInformation("✅ [ROUTER-PREPARE-{Index}] PrepareMessagesForProvider completed in {Ms}ms", i, prepSw.ElapsedMilliseconds);
+            
             if (providerMessages is null)
             {
+                logger.LogDebug("⚠️ [ROUTER-PROVIDER-{Index}] PrepareMessagesForProvider returned null for {Key}", i, key);
                 continue;
             }
 
             logger.LogInformation("🎯 codebrewRouter streaming: trying {Key} (attempt {Attempt}/{Total}) for {TaskType}",
                 key, i + 1, providers.Length, taskType);
 
+            logger.LogInformation("📞 [ROUTER-FIRST-CHUNK-{Index}] Calling TryGetFirstChunkAsync for {Key}", i, key);
+            var chunkSw = System.Diagnostics.Stopwatch.StartNew();
             var result = await TryGetFirstChunkAsync(client, providerMessages, options, cancellationToken);
+            chunkSw.Stop();
+            logger.LogInformation("✅ [ROUTER-FIRST-CHUNK-{Index}] TryGetFirstChunkAsync completed in {Ms}ms - Success: {Success}", i, chunkSw.ElapsedMilliseconds, result.Success);
             if (!result.Success)
             {
-                logger.LogWarning("⚠️ codebrewRouter streaming provider {Key} failed before first chunk. Trying next.", key);
+                logger.LogWarning("⚠️ [ROUTER-FIRST-CHUNK-{Index}] codebrewRouter streaming provider {Key} failed before first chunk. Trying next.", i, key);
                 continue;
             }
 
