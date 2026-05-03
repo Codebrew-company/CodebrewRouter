@@ -10,7 +10,7 @@ using OllamaSharp;
 namespace Blaze.LlmGateway.Api;
 
 public sealed class ModelAvailabilityHeartbeatService(
-    IServiceProvider serviceProvider,
+    IServiceScopeFactory serviceScopeFactory,
     IOptions<LlmGatewayOptions> options,
     LmStudioModelDiscovery lmStudioModelDiscovery,
     ModelAvailabilityRegistry registry,
@@ -210,7 +210,7 @@ public sealed class ModelAvailabilityHeartbeatService(
             // Probe chat with configured model to validate provider health
             logger.LogDebug("  ├─ Sending probe message (ping) to LM Studio");
             using var chatTimeoutCts = CreateTimeoutToken(cancellationToken);
-            using var scope = serviceProvider.CreateScope();
+            using var scope = serviceScopeFactory.CreateScope();
             var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>("LmStudio");
             var response = await client.GetResponseAsync(
                 [new ChatMessage(ChatRole.User, "ping")],

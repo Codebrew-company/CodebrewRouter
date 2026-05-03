@@ -19,6 +19,9 @@ public static class InfrastructureServiceExtensions
 {
     public static IServiceCollection AddLlmProviders(this IServiceCollection services)
     {
+        // TEMPORARY: Disable OllamaLocal registration due to connectivity issues
+        // When Ollama is running locally or remotely, re-enable this and update configuration
+        /*
         // OllamaLocal — local Ollama container (backup for remote server)
         services.AddKeyedSingleton<IChatClient>("OllamaLocal", (sp, _) =>
         {
@@ -36,6 +39,7 @@ public static class InfrastructureServiceExtensions
                     opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
                 .Build();
         });
+        */
 
         // LmStudio — local OpenAI-compatible endpoint exposed by LM Studio at /v1.
         services.AddKeyedSingleton<IChatClient>("LmStudio", (sp, _) =>
@@ -76,19 +80,35 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<KeywordRoutingStrategy>();
         services.AddSingleton<IRoutingStrategy>(sp =>
         {
-            // Try to use OllamaLocal for meta-routing if available, otherwise use keyword-only routing
             var keywordFallback = sp.GetRequiredService<KeywordRoutingStrategy>();
             var logger = sp.GetRequiredService<ILogger<OllamaMetaRoutingStrategy>>();
             
-            var routerClient = sp.GetKeyedService<IChatClient>("OllamaLocal");
-            if (routerClient is not null)
+            // TEMPORARY: Disable Ollama routing by default due to connectivity issues at startup.
+            // To enable, uncomment below and ensure OllamaLocal endpoint is reachable.
+            // TODO: Implement lazy initialization with async health check for Ollama router.
+            
+            logger.LogInformation("Using keyword-only routing strategy (Ollama routing disabled for now)");
+            return keywordFallback;
+            
+            // COMMENTED: Original meta-routing approach (re-enable when Ollama is reachable)
+            /*
+            try
             {
-                return new OllamaMetaRoutingStrategy(routerClient, keywordFallback, logger);
+                var routerClient = sp.GetKeyedService<IChatClient>("OllamaLocal");
+                if (routerClient is not null)
+                {
+                    logger.LogInformation("OllamaLocal available; using meta-routing strategy with 6-second probe timeout");
+                    return new OllamaMetaRoutingStrategy(routerClient, keywordFallback, logger);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "OllamaLocal initialization failed; falling back to keyword-only routing");
             }
             
-            // Ollama not available — use keyword routing directly
             logger.LogInformation("OllamaLocal not available; using keyword-only routing strategy");
             return keywordFallback;
+            */
         });
 
         // Register failover strategy with configuration
@@ -178,8 +198,15 @@ public static class InfrastructureServiceExtensions
                 return new NoopContextCompactor();
             }
 
+            var ollamaLocal = sp.GetKeyedService<IChatClient>("OllamaLocal");
+            if (ollamaLocal is null)
+            {
+                // OllamaLocal not available; skip context compaction
+                return new NoopContextCompactor();
+            }
+
             return new ContextCompactor(
-                sp.GetKeyedService<IChatClient>("OllamaLocal"),
+                ollamaLocal,
                 sp.GetRequiredService<TokenCounting.ITokenCounter>(),
                 sp.GetRequiredService<IOptions<ContextCompactionOptions>>(),
                 sp.GetRequiredService<ILogger<ContextCompactor>>());

@@ -35,7 +35,7 @@ public static class AppHostComposition
             "Microsoft");
         var ollamaLocalBaseUrl = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:BaseUrl",
-            "http://192.168.16.12:11434");
+            "http://localhost:11434");
         var ollamaLocalModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:Model",
             "gemma4:e4b");

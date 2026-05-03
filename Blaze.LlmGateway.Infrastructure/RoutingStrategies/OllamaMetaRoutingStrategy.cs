@@ -63,7 +63,19 @@ public class OllamaMetaRoutingStrategy(
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(3)); // 3-second timeout on router probe
             
-            var response = await routerClient.GetResponseAsync(routingMessages, routingOptions, timeoutCts.Token);
+            // Wrap in explicit timeout task in case CancellationToken doesn't propagate through HTTP stack
+            var routerTask = routerClient.GetResponseAsync(routingMessages, routingOptions, timeoutCts.Token);
+            var completedTask = await Task.WhenAny(
+                routerTask,
+                Task.Delay(TimeSpan.FromSeconds(4), cancellationToken)  // 4-second hard limit
+            ).ConfigureAwait(false);
+            
+            if (completedTask != routerTask)
+            {
+                throw new OperationCanceledException("Router probe exceeded 4-second timeout");
+            }
+            
+            var response = await routerTask;
             var responseText = response.Text?.Trim() ?? "";
 
             if (Enum.TryParse<RouteDestination>(responseText, ignoreCase: true, out var destination))

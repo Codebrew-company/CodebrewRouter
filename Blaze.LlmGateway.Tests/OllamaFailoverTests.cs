@@ -58,7 +58,7 @@ public class OllamaFailoverTests
         var sp = services.BuildServiceProvider();
 
         var heartbeat = new ModelAvailabilityHeartbeatService(
-            sp,
+            sp.GetRequiredService<IServiceScopeFactory>(),
             optionsWrapper,
             sp.GetRequiredService<LmStudioModelDiscovery>(),
             registry,
