@@ -256,14 +256,15 @@ public class LocalInferenceHealthManager : ILocalInferenceHealthManager, IDispos
                 // Transition if status changed
                 if (newStatus != _currentStatus)
                 {
+                    var oldStatus = _currentStatus;
                     var diagnostics = CreateDiagnostics(newStatus);
-                    FireHealthStatusChanged(_currentStatus, newStatus, reason, diagnostics);
+                    FireHealthStatusChanged(oldStatus, newStatus, reason, diagnostics);
                     _currentStatus = newStatus;
                     _currentDiagnostics = diagnostics;
                     _lastTransitionUtc = DateTime.UtcNow;
                     _logger.LogWarning(
                         "Health status transitioned: {OldStatus} -> {NewStatus}. Reason: {Reason}",
-                        _currentStatus, newStatus, reason);
+                        oldStatus, newStatus, reason);
                 }
                 else
                 {

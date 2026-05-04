@@ -192,16 +192,13 @@ public class LocalModelAvailabilityService : ILocalModelAvailability, IDisposabl
                 return true;
             }
 
-            var wasUnavailable = GetCachedAvailability(normalizedUrl) != null;
+            // Get model BEFORE clearing cache so we can fire the event with the model details
+            var lastModel = GetCachedAvailability(normalizedUrl);
             UpdateCache(normalizedUrl, null, isAvailable: false);
 
-            if (wasUnavailable)
+            if (lastModel != null)
             {
-                var lastModel = GetCachedAvailability(normalizedUrl);
-                if (lastModel != null)
-                {
-                    FireAvailabilityChangedEvent(lastModel, wasAvailable: true, "Model no longer available");
-                }
+                FireAvailabilityChangedEvent(lastModel, wasAvailable: true, "Model no longer available");
             }
 
             _logger.LogWarning("Model not available: {ModelUrl}", normalizedUrl);
