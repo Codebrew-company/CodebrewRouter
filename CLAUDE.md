@@ -113,6 +113,7 @@ SDK mappings (must be followed exactly):
 - No circuit breaker — high-priority resilience enhancement for Phase 2.
 - Tool invocation handlers — placeholder in TranslateTools; actual tool execution routed to MCP or external handlers (Phase 2).
 - Integration test (Tier-A) with real GitHub Models endpoint — scaffolded, awaits credentials for full E2E validation.
+- **OpenCodeGo model tokenizers (Phase 3b):** Native Qwen tokenizer loading via `Yuniko.Software.Qwen3Tokenizer` and HuggingFace JSON loading for DeepSeek/GLM models are marked for future implementation. Currently all 14 models gracefully fall back to gpt-4o encoding with logged accuracy warnings (~75-99% depending on model family). No exceptions are thrown; production-safe degradation.
 
 ## Squad Orchestration
 

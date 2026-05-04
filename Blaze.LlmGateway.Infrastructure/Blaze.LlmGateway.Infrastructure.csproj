@@ -13,6 +13,8 @@
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="2.0.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
+    <!-- Qwen model tokenizer support (MIT licensed) for native tokenization of Qwen models -->
+    <PackageReference Include="Yuniko.Software.Qwen3Tokenizer" Version="1.0.5" />
   </ItemGroup>
 
   <PropertyGroup>

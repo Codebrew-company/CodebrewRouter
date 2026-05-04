@@ -279,7 +279,17 @@ public static class InfrastructureServiceExtensions
         });
 
         // ── Token Counting ────────────────────────────────────────────────────────
-        services.AddSingleton<TokenCounting.ITokenCounter, TokenCounting.TiktokenTokenCounter>();
+        // Register tokenizer registry for OpenCodeGo and other models
+        services.AddSingleton<TokenCounting.ITokenizerRegistry>(sp =>
+            new TokenCounting.OpenCodeGoTokenizerRegistry(
+                sp.GetRequiredService<ILogger<TokenCounting.OpenCodeGoTokenizerRegistry>>()));
+
+        // Register token counter with registry support for graceful model-specific tokenization
+        services.AddSingleton<TokenCounting.ITokenCounter>(sp =>
+            new TokenCounting.TiktokenTokenCounter(
+                defaultModelId: "gpt-4o",
+                registry: sp.GetRequiredService<TokenCounting.ITokenizerRegistry>(),
+                logger: sp.GetRequiredService<ILogger<TokenCounting.TiktokenTokenCounter>>()));
 
         // ── codebrewRouter virtual model ──────────────────────────────────────
 

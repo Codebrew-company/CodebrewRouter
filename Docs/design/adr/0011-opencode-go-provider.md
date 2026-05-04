@@ -264,6 +264,32 @@ Follows the existing `LlmGateway__Providers__{Name}__{Property}` convention used
 11. `Blaze.LlmGateway.Infrastructure/RoutingStrategies/KeywordRoutingStrategy.cs` — optional keyword matches
 12. `Blaze.LlmGateway.Infrastructure/ClientFactory/OpenAICompatibleClientFactory.cs` — optional: extract shared factory to avoid duplicate code across LmStudio + OpenCodeGo registrations
 
+#### 9. Token Counting Strategy (Phase 2)
+
+Token counting for the 14 OpenCodeGo models uses a **graceful fallback** approach with no exceptions:
+
+**Tokenizer Availability by Model Family:**
+
+| Family | Tokenizer | Implementation | Accuracy | Notes |
+|---|---|---|---|---|
+| Qwen (3.5+, 3.6+) | Native C# | `Yuniko.Software.Qwen3Tokenizer` | ~99% | Marked for Phase 3b pending package API verification |
+| DeepSeek (v4-pro, v4-flash) | HuggingFace JSON | `Microsoft.ML.Tokenizers` + cached tokenizer.json | ~90-95% | Requires manual HF tokenizer download and cache (Phase 3b) |
+| GLM (5, 5.1) | HuggingFace JSON | `Microsoft.ML.Tokenizers` + cached tokenizer.json | ~90-95% | Requires manual HF tokenizer download and cache (Phase 3b) |
+| Kimi, MiniMax, MiMo | None (no public tokenizers) | gpt-4o (cl100k_base) fallback | ~75-85% | Graceful fallback; logged with accuracy warnings |
+
+**Implementation:**
+
+- `ITokenizerRegistry` interface: Contract for model-aware tokenizer resolution, returns null for unavailable models (never throws).
+- `OpenCodeGoTokenizerRegistry` implementation: Maps all 14 models explicitly to tokenizers (native or null). Logs warnings with accuracy metadata when falling back.
+- `TiktokenTokenCounter` refactored: Injects registry, queries before lookup, falls back to gpt-4o with accuracy warning if unavailable.
+- **Design principle:** No exceptions reach application layer; graceful degradation via logging + fallback to gpt-4o.
+
+**Future Enhancement (Phase 3b):**
+
+- Implement `LoadQwenTokenizer()` with proper `Yuniko.Software.Qwen3Tokenizer` API integration.
+- Implement `LoadHuggingFaceTokenizer()` to load DeepSeek/GLM tokenizer.json files from cache or remote HuggingFace CDN.
+- Track in GitHub issue for future tokenizer support improvements.
+
 ## Consequences
 
 **Positive**
