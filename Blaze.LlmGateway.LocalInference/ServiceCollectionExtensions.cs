@@ -1,3 +1,4 @@
+using System;
 using Blaze.LlmGateway.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,22 +22,22 @@ public static class ServiceCollectionExtensions
     /// <param name="configuration">The application configuration.</param>
     /// <returns>The service collection for chaining.</returns>
     /// <remarks>
-    /// Registers:
-    /// - LocalInferenceOptions from configuration (LlmGateway:LocalInference section)
-    /// - RuntimeDownloadModelProvider as singleton IModelDistributionProvider
-    /// - LocalGemmaChatClient as keyed "LocalGemma" IChatClient
-    /// - HybridRoutingStrategyFactory for hybrid routing logic
-    /// - ILocalModelAvailability as singleton LocalModelAvailabilityService
-    /// - ICodebrewRouterDiscoveryService as singleton CodebrewRouterDiscoveryService
-    /// - ILocalInferenceHealthManager as singleton LocalInferenceHealthManager
-    /// - Health check for local inference
+    /// DEPRECATED: Use AddCodebrewRouterProvider(CodebrewRouterProviderOptions) instead.
+    /// This method will be removed in v2.0 of Blaze.LlmGateway.
     /// 
-    /// If LocalInferenceOptions is not bound in configuration, a default instance is used.
+    /// Currently forwards to the legacy implementation for backwards compatibility.
     /// </remarks>
+    [Obsolete(
+        "Use AddCodebrewRouterProvider(CodebrewRouterProviderOptions) instead. " +
+        "This method will be removed in v2.0 of Blaze.LlmGateway.",
+        false)]
     public static IServiceCollection AddLocalInferenceServices(
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        if (services == null) throw new ArgumentNullException(nameof(services));
+        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+
         // Bind configuration from LlmGateway:LocalInference section
         var localInferenceSection = configuration.GetSection("LlmGateway:LocalInference");
         var options = new LocalInferenceOptions();
