@@ -64,10 +64,10 @@ public class LocalInferenceHealthManagerTests
     }
 
     [Fact]
-    public void GetStatus_InitiallyUnavailable()
+    public void GetStatus_InitiallyDegraded()
     {
         var status = _manager.GetStatus();
-        Assert.Equal(HealthStatus.Unavailable, status);
+        Assert.Equal(HealthStatus.Degraded, status);
     }
 
     [Fact]
@@ -285,9 +285,9 @@ public class LocalInferenceHealthManagerTests
     }
 
     [Fact]
-    public async Task TransitionSequence_UnavailableToHealthyToDegraded()
+    public async Task TransitionSequence_DegradedToHealthyToDegraded()
     {
-        Assert.Equal(HealthStatus.Unavailable, _manager.GetStatus());
+        Assert.Equal(HealthStatus.Degraded, _manager.GetStatus());
 
         var localAvailable = new ModelAvailabilityChanged
         {
