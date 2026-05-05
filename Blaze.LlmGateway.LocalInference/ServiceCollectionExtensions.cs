@@ -1,5 +1,7 @@
 using System;
 using Blaze.LlmGateway.Core.Configuration;
+using Blaze.LlmGateway.Core.Provider;
+using Blaze.LlmGateway.Infrastructure.Provider;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
