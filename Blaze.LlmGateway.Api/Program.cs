@@ -56,6 +56,35 @@ builder.Services.AddSingleton<IModelCatalog, ModelCatalogService>();
 // Phase 1: Local inference - availability tracking, remote discovery, and health management
 builder.Services.AddLocalInferenceServices(builder.Configuration);
 
+// ============================================================================
+// EXAMPLE: Three ways to register CodebrewRouterProvider
+// ============================================================================
+
+// EXAMPLE 1: Mobile (MAUI) — minimal setup
+// var mobileOptions = new CodebrewRouterProviderOptions 
+// { 
+//     LocalEndpoint = "http://192.168.1.100:11434"
+// };
+// builder.Services.AddCodebrewRouterProvider(mobileOptions);
+
+// EXAMPLE 2: Desktop — full stack
+// var desktopOptions = new CodebrewRouterProviderOptions
+// {
+//     LocalEndpoint = "http://localhost:11434",
+//     RemoteDiscoveryEndpoint = "http://localhost:5273"
+// };
+// builder.Services
+//     .AddCodebrewRouterProvider(desktopOptions)
+//     .WithHealthChecks()
+//     .WithDiscovery()
+//     .WithRouting()
+//     .Build();
+
+// EXAMPLE 3: Aspire (current, using deprecation shim)
+// Still works: AddLocalInferenceServices(configuration)
+
+// ============================================================================
+
 builder.Services.AddHealthChecks()
     .AddCheck<ModelProviderHealthCheck>("model_providers", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
 
