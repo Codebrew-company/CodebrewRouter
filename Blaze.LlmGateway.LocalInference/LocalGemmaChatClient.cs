@@ -18,6 +18,7 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
     private readonly InteractiveExecutor? _executor;
     private readonly LocalInferenceOptions _options;
     private readonly SemaphoreSlim _inferenceLock = new(1, 1);
+    private readonly string? _unavailableReason;
     private bool _disposed;
 
     public string? ModelPath { get; }
@@ -44,9 +45,28 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         _options = options;
         ModelPath = options.ModelPath;
 
-        var modelPath = options.ModelPath;
-        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+        if (!options.Enabled)
         {
+            _unavailableReason = "LocalGemma is not loaded because local LLamaSharp inference is disabled.";
+            _weights = null;
+            _context = null;
+            _executor = null;
+            return;
+        }
+
+        var modelPath = options.ModelPath;
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            _unavailableReason = "LocalGemma is not loaded because LlmGateway:LocalInference:ModelPath is not configured. Set it to a local Gemma GGUF file.";
+            _weights = null;
+            _context = null;
+            _executor = null;
+            return;
+        }
+
+        if (!File.Exists(modelPath))
+        {
+            _unavailableReason = $"LocalGemma is not loaded because configured LlmGateway:LocalInference:ModelPath '{modelPath}' does not exist.";
             _weights = null;
             _context = null;
             _executor = null;
@@ -71,6 +91,7 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
             _weights = LLamaWeights.LoadFromFile(modelParams);
             _context = new LLamaContext(_weights, modelParams);
             _executor = new InteractiveExecutor(_context);
+            _unavailableReason = null;
         }
         catch (Exception ex)
         {
@@ -87,16 +108,13 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (_executor is null)
-        {
-            yield break;
-        }
-
         var messages = chatMessages.ToList();
         if (messages.Count == 0)
         {
             yield break;
         }
+
+        var executor = GetLoadedExecutor();
 
         var history = new List<ChatMessage>();
         for (int i = 0; i < messages.Count - 1; i++)
@@ -118,7 +136,7 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         await _inferenceLock.WaitAsync(cancellationToken);
         try
         {
-            await foreach (var token in _executor.InferAsync(prompt, inferenceParams, cancellationToken))
+            await foreach (var token in executor.InferAsync(prompt, inferenceParams, cancellationToken))
             {
                 yield return new ChatResponseUpdate(ChatRole.Assistant, token);
 
@@ -218,6 +236,17 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         sb.Append("Assistant: ");
 
         return sb.ToString();
+    }
+
+    private InteractiveExecutor GetLoadedExecutor()
+    {
+        if (_executor is not null)
+        {
+            return _executor;
+        }
+
+        throw new InvalidOperationException(
+            _unavailableReason ?? "LocalGemma is not loaded. Configure LlmGateway:LocalInference:ModelPath to a local Gemma GGUF file.");
     }
 }
 

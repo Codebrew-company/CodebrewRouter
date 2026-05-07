@@ -23,6 +23,23 @@ public class LocalInferenceIntegrationTests
         services.AddLogging();
         return services;
     }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Blaze.LlmGateway.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate repository root.");
+    }
+
     [Fact]
     public void AddLocalInferenceServices_RegistersAllRequiredServices()
     {
@@ -280,6 +297,23 @@ public class LocalInferenceIntegrationTests
         Assert.Equal(1, options.WarmupMaxOutputTokens);
         Assert.Equal(120, options.WarmupTimeoutSeconds);
         Assert.True(options.BlockStartupUntilWarm);
+    }
+
+    [Fact]
+    public void ApiDefaultLocalInferenceConfig_DoesNotBlockStartupWhenModelPathIsEmpty()
+    {
+        var root = FindRepositoryRoot();
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(root, "Blaze.LlmGateway.Api", "appsettings.json"))
+            .Build();
+
+        var options = configuration
+            .GetSection("LlmGateway:LocalInference")
+            .Get<LocalInferenceOptions>() ?? new LocalInferenceOptions();
+
+        Assert.True(options.WarmupEnabled);
+        Assert.True(string.IsNullOrWhiteSpace(options.ModelPath));
+        Assert.False(options.BlockStartupUntilWarm);
     }
 
     [Fact]

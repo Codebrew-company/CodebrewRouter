@@ -303,15 +303,35 @@ public class OllamaLocalIntegrationTests : IAsyncLifetime
         RemoveServicesByType(services, typeof(LocalInferenceOptions));
         RemoveServicesByType(services, typeof(IOptions<LocalInferenceOptions>));
 
+        var modelPath = CreateAvailableLocalGemmaPath();
         var options = new LocalInferenceOptions
         {
-            Enabled = false,
+            Enabled = true,
+            ModelPath = modelPath,
             WarmupEnabled = false,
             BlockStartupUntilWarm = false
         };
 
         services.AddSingleton(options);
         services.AddSingleton(Options.Create(options));
+        services.PostConfigure<LlmGatewayOptions>(gatewayOptions =>
+        {
+            gatewayOptions.LocalInference.Enabled = true;
+            gatewayOptions.LocalInference.ModelPath = modelPath;
+            gatewayOptions.LocalInference.WarmupEnabled = false;
+            gatewayOptions.LocalInference.BlockStartupUntilWarm = false;
+        });
+    }
+
+    private static string CreateAvailableLocalGemmaPath()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "codebrewrouter-test-local-gemma.gguf");
+        if (!File.Exists(path))
+        {
+            File.WriteAllBytes(path, []);
+        }
+
+        return path;
     }
 
     private static void RemoveServicesByType(IServiceCollection services, Type serviceType)

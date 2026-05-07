@@ -25,6 +25,16 @@ public class AppHostCompositionTests
         Assert.Contains("LlmGateway__LocalInference__WarmupTimeoutSeconds", source);
     }
 
+    [Fact]
+    public void AppHostDefaultLocalInferenceConfig_DoesNotBlockStartupWhenModelPathIsEmpty()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "appsettings.json"));
+
+        Assert.Contains("\"ModelPath\": \"\"", source);
+        Assert.Contains("\"BlockStartupUntilWarm\": false", source);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -158,15 +158,7 @@ public sealed class ModelAvailabilityHeartbeatService(
         DateTimeOffset checkedAt)
     {
         // Seed local-only models (BYOK approach — no cloud providers)
-        AddConfiguredModel(
-            models,
-            providers,
-            "LocalGemma",
-            "local-gemma",
-            "llamasharp",
-            _options.LocalInference.ModelPath,
-            _options.LocalInference.Enabled,
-            checkedAt);
+        AddLocalGemmaModel(models, providers, checkedAt);
 
         if (_options.OfflineOnly)
         {
@@ -479,9 +471,18 @@ public sealed class ModelAvailabilityHeartbeatService(
             .Where(model => model.Enabled)
             .Select(model => model.Provider)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var hasBackingProvider = codebrewOptions.FallbackRules.Values
+        var fallbackProviders = codebrewOptions.FallbackRules.Values
             .SelectMany(providers => providers)
-            .Any(provider => availableProviders.Contains(provider));
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var hasBackingProvider = fallbackProviders.Any(provider => availableProviders.Contains(provider));
+        var unavailableProviderReasons = fallbackProviders
+            .Where(provider => !availableProviders.Contains(provider))
+            .Select(provider => FormatUnavailableProviderReason(provider, providers))
+            .ToArray();
+        var unavailableReason = hasBackingProvider
+            ? null
+            : BuildNoBackingProviderReason(unavailableProviderReasons);
 
         models.Add(new AvailableModel(
             codebrewOptions.ModelId,
@@ -489,14 +490,90 @@ public sealed class ModelAvailabilityHeartbeatService(
             "codebrew",
             "virtual",
             Enabled: hasBackingProvider,
-            ErrorMessage: hasBackingProvider ? null : "No backing provider is currently available.",
+            ErrorMessage: unavailableReason,
             LastCheckedUtc: checkedAt));
         providers.Add(new ProviderAvailabilitySnapshot(
             "CodebrewRouter",
             hasBackingProvider,
-            hasBackingProvider ? null : "No backing provider is currently available.",
+            unavailableReason,
             checkedAt));
     }
+
+    private void AddLocalGemmaModel(
+        ICollection<AvailableModel> models,
+        ICollection<ProviderAvailabilitySnapshot> providers,
+        DateTimeOffset checkedAt)
+    {
+        var unavailableReason = GetLocalGemmaUnavailableReason(_options.LocalInference);
+        if (unavailableReason is not null)
+        {
+            providers.Add(new ProviderAvailabilitySnapshot("LocalGemma", false, unavailableReason, checkedAt));
+            models.Add(new AvailableModel(
+                "local-gemma",
+                "LocalGemma",
+                "llamasharp",
+                "configured",
+                _options.LocalInference.ModelPath,
+                Enabled: false,
+                ErrorMessage: unavailableReason,
+                LastCheckedUtc: checkedAt));
+            return;
+        }
+
+        AddConfiguredModel(
+            models,
+            providers,
+            "LocalGemma",
+            "local-gemma",
+            "llamasharp",
+            _options.LocalInference.ModelPath,
+            isConfigured: true,
+            checkedAt);
+    }
+
+    private static string? GetLocalGemmaUnavailableReason(LocalInferenceOptions options)
+    {
+        if (!options.Enabled)
+        {
+            return "LocalGemma is not loaded because local LLamaSharp inference is disabled.";
+        }
+
+        if (string.IsNullOrWhiteSpace(options.ModelPath))
+        {
+            return "LocalGemma is not loaded because LlmGateway:LocalInference:ModelPath is not configured. Set it to a local Gemma GGUF file.";
+        }
+
+        if (Uri.TryCreate(options.ModelPath, UriKind.Absolute, out var uri) &&
+            (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "LocalGemma is not loaded because LlmGateway:LocalInference:ModelPath must be a local Gemma GGUF file path for offline startup.";
+        }
+
+        if (!File.Exists(options.ModelPath))
+        {
+            return $"LocalGemma is not loaded because configured LlmGateway:LocalInference:ModelPath '{options.ModelPath}' does not exist.";
+        }
+
+        return null;
+    }
+
+    private static string FormatUnavailableProviderReason(
+        string provider,
+        IEnumerable<ProviderAvailabilitySnapshot> providerSnapshots)
+    {
+        var snapshot = providerSnapshots.LastOrDefault(candidate =>
+            string.Equals(candidate.Provider, provider, StringComparison.OrdinalIgnoreCase));
+
+        return snapshot is null
+            ? $"{provider}: provider is not configured."
+            : $"{provider}: {snapshot.ErrorMessage ?? "provider is unavailable."}";
+    }
+
+    private static string BuildNoBackingProviderReason(IReadOnlyCollection<string> providerReasons)
+        => providerReasons.Count == 0
+            ? "No backing provider is currently available."
+            : $"No backing provider is currently available. {string.Join("; ", providerReasons)}";
 
     private void AddConfiguredModel(
         ICollection<AvailableModel> models,

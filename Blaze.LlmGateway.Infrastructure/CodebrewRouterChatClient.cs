@@ -78,6 +78,7 @@ public sealed class CodebrewRouterChatClient(
         Log(new RouterResolveEvent(
             taskType.ToString(), tokenCount, providers.Length, chain, resolveSw.ElapsedMilliseconds));
 
+        var providerFailures = new List<string>();
         for (var i = 0; i < providers.Length; i++)
         {
             var key = providers[i];
@@ -86,12 +87,14 @@ public sealed class CodebrewRouterChatClient(
             if (client is null)
             {
                 Log(new RouterSkipEvent(i + 1, key, model, 0, 0, "not_registered"));
+                providerFailures.Add($"{key}: provider is not registered.");
                 continue;
             }
 
             var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, options, cancellationToken);
             if (providerMessages is null)
             {
+                providerFailures.Add($"{key}: context is too large for the provider.");
                 continue;
             }
 
@@ -115,10 +118,17 @@ public sealed class CodebrewRouterChatClient(
             {
                 attemptSw.Stop();
                 Log(new RouterFailEvent(i + 1, key, model, ex.Message), LogLevel.Warning);
+                providerFailures.Add($"{key}: {ex.GetBaseException().Message}");
             }
         }
 
         Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
+
+        var exhaustedMessage = BuildProviderUnavailableMessage(taskType, providers, providerFailures);
+        if (GatewayOptions.OfflineOnly)
+        {
+            throw new InvalidOperationException(exhaustedMessage);
+        }
 
         var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, options, cancellationToken)
             ?? cleanedMessages;
@@ -153,6 +163,7 @@ public sealed class CodebrewRouterChatClient(
         Log(new RouterResolveEvent(
             taskType.ToString(), tokenCount, providers.Length, chain, resolveSw.ElapsedMilliseconds));
 
+        var providerFailures = new List<string>();
         for (var i = 0; i < providers.Length; i++)
         {
             var key = providers[i];
@@ -162,12 +173,14 @@ public sealed class CodebrewRouterChatClient(
             if (client is null)
             {
                 Log(new RouterSkipEvent(i + 1, key, model, 0, 0, "not_registered"));
+                providerFailures.Add($"{key}: provider is not registered.");
                 continue;
             }
 
             var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, options, cancellationToken);
             if (providerMessages is null)
             {
+                providerFailures.Add($"{key}: context is too large for the provider.");
                 continue;
             }
 
@@ -181,7 +194,9 @@ public sealed class CodebrewRouterChatClient(
 
             if (!result.Success)
             {
-                Log(new RouterFailEvent(i + 1, key, model, "First chunk probe failed"), LogLevel.Warning);
+                var reason = result.FailureReason ?? "First chunk probe failed";
+                Log(new RouterFailEvent(i + 1, key, model, reason), LogLevel.Warning);
+                providerFailures.Add($"{key}: {reason}");
                 continue;
             }
 
@@ -223,14 +238,21 @@ public sealed class CodebrewRouterChatClient(
 
         Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
 
+        var exhaustedMessage = BuildProviderUnavailableMessage(taskType, providers, providerFailures);
+        if (GatewayOptions.OfflineOnly)
+        {
+            throw new InvalidOperationException(exhaustedMessage);
+        }
+
         var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, options, cancellationToken)
             ?? cleanedMessages;
         var innerResult = await TryGetFirstChunkAsync(InnerClient, innerMessages, options, cancellationToken);
         if (!innerResult.Success)
         {
             Log(new RouterFailEvent(0, "LmStudio", "InnerClient", "InnerClient probe failed"), LogLevel.Error);
+            var innerReason = innerResult.FailureReason ?? "InnerClient probe failed";
             throw new InvalidOperationException(
-                $"All streaming providers (including InnerClient fallback) failed for task {taskType}.");
+                $"{exhaustedMessage} InnerClient: {innerReason}");
         }
 
         yield return innerResult.FirstChunk;
@@ -440,24 +462,41 @@ public sealed class CodebrewRouterChatClient(
             if (!await enumerator.MoveNextAsync())
             {
                 await enumerator.DisposeAsync();
-                return FirstChunkResult.Failed;
+                return FirstChunkResult.Failed("Provider completed without emitting a response chunk.");
             }
 
             return new FirstChunkResult(true, enumerator.Current, enumerator);
         }
-        catch
+        catch (Exception ex)
         {
             await enumerator.DisposeAsync();
-            return FirstChunkResult.Failed;
+            return FirstChunkResult.Failed(ex.GetBaseException().Message);
         }
+    }
+
+    private string BuildProviderUnavailableMessage(
+        TaskType taskType,
+        IReadOnlyCollection<string> providers,
+        IReadOnlyCollection<string> providerFailures)
+    {
+        var modelId = string.IsNullOrWhiteSpace(Options.ModelId) ? "codebrewRouter" : Options.ModelId;
+        var providerChain = providers.Count == 0
+            ? "no configured providers"
+            : string.Join(", ", providers);
+        var details = providerFailures.Count == 0
+            ? $"Provider chain: {providerChain}."
+            : string.Join("; ", providerFailures);
+
+        return $"Model '{modelId}' is currently unavailable: no backing provider succeeded for task {taskType}. {details}";
     }
 
     private sealed record FirstChunkResult(
         bool Success,
         ChatResponseUpdate FirstChunk,
-        IAsyncEnumerator<ChatResponseUpdate>? Enumerator)
+        IAsyncEnumerator<ChatResponseUpdate>? Enumerator,
+        string? FailureReason = null)
     {
-        public static readonly FirstChunkResult Failed = new(false, default!, null);
+        public static FirstChunkResult Failed(string reason) => new(false, default!, null, reason);
     }
 
     private readonly record struct ProviderContextBudget(

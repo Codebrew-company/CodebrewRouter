@@ -374,8 +374,7 @@ public static class ChatCompletionsEndpoint
 
         var statusCode = exception is ClientResultException { Status: 404 }
             ? StatusCodes.Status404NotFound
-            : exception is InvalidOperationException invalidOperation &&
-              invalidOperation.Message.Contains("currently unavailable", StringComparison.OrdinalIgnoreCase)
+            : IsUnavailableException(exception)
                 ? StatusCodes.Status503ServiceUnavailable
                 : StatusCodes.Status502BadGateway;
         var code = statusCode switch
@@ -394,6 +393,19 @@ public static class ChatCompletionsEndpoint
         return Results.Json(
             new ErrorResponse(new ErrorDetail(message, "provider_error", code)),
             statusCode: statusCode);
+    }
+
+    private static bool IsUnavailableException(Exception? exception)
+    {
+        if (exception is not InvalidOperationException invalidOperation)
+        {
+            return false;
+        }
+
+        var message = invalidOperation.Message;
+        return message.Contains("currently unavailable", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("No currently available", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("not loaded", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record StreamingProbeResult(

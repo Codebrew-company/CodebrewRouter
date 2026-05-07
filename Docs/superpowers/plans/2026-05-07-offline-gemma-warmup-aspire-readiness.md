@@ -9,7 +9,7 @@ Add an always-warm offline startup path for `codebrewRouter -> LocalGemma`. The 
   - `WarmupPrompt = "ready"`
   - `WarmupMaxOutputTokens = 1`
   - `WarmupTimeoutSeconds = 120`
-  - `BlockStartupUntilWarm = true`
+  - `BlockStartupUntilWarm = true` when a real local model path is configured
 - Update `LocalGemmaWarmupService` to:
   - resolve keyed `"LocalGemma"` at startup
   - confirm the model loaded from `ModelPath`
@@ -43,4 +43,5 @@ Add an always-warm offline startup path for `codebrewRouter -> LocalGemma`. The 
 ## Assumptions
 - Offline mode uses only local Gemma through `LocalGemma`.
 - `ModelPath` must point to a real local Gemma 4 GGUF file for warmup to succeed.
-- `BlockStartupUntilWarm = true` is the default for offline mode because fast first chat matters more than fast process startup.
+- `BlockStartupUntilWarm = true` is the intended offline GGUF profile because fast first chat matters more than fast process startup.
+- Base checked-in API/AppHost config leaves `BlockStartupUntilWarm = false` while `ModelPath` is blank, so local development starts and reports degraded warmup readiness instead of crashing.
