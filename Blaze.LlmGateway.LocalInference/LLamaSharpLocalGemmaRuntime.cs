@@ -2,12 +2,17 @@ using System.Runtime.CompilerServices;
 using Blaze.LlmGateway.Core.Configuration;
 using LLama;
 using LLama.Common;
+using LLama.Native;
 using Microsoft.Extensions.AI;
 
 namespace Blaze.LlmGateway.LocalInference;
 
 internal sealed class LLamaSharpLocalGemmaRuntime : ILocalGemmaRuntime
 {
+    private static readonly object NativeBackendConfigurationLock = new();
+    private static bool nativeBackendConfigured;
+    private static Action<bool> configureCuda = static enabled => NativeLibraryConfig.Instance.WithCuda(enabled);
+
     private readonly LocalInferenceOptions _options;
     private readonly LLamaWeights _weights;
     private readonly LLamaContext _context;
@@ -19,21 +24,23 @@ internal sealed class LLamaSharpLocalGemmaRuntime : ILocalGemmaRuntime
     {
         _options = options;
 
-        var modelParams = new ModelParams(localModelPath)
-        {
-            ContextSize = (uint)Math.Max(1, options.MaxContextTokens),
-            GpuLayerCount = 0,
-            UseMemorymap = true,
-        };
-
-        if (options.ThreadCount > 0)
-        {
-            modelParams.Threads = (uint)options.ThreadCount;
-            modelParams.BatchThreads = (uint)options.ThreadCount;
-        }
-
         try
         {
+            ConfigureNativeBackendForCpu();
+
+            var modelParams = new ModelParams(localModelPath)
+            {
+                ContextSize = (uint)Math.Max(1, options.MaxContextTokens),
+                GpuLayerCount = 0,
+                UseMemorymap = true,
+            };
+
+            if (options.ThreadCount > 0)
+            {
+                modelParams.Threads = (uint)options.ThreadCount;
+                modelParams.BatchThreads = (uint)options.ThreadCount;
+            }
+
             _weights = LLamaWeights.LoadFromFile(modelParams);
             _context = new LLamaContext(_weights, modelParams);
             _executor = new InteractiveExecutor(_context);
@@ -41,6 +48,26 @@ internal sealed class LLamaSharpLocalGemmaRuntime : ILocalGemmaRuntime
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Failed to load Gemma model from '{localModelPath}'", ex);
+        }
+    }
+
+    internal static void ConfigureNativeBackendForCpu()
+    {
+        lock (NativeBackendConfigurationLock)
+        {
+            if (nativeBackendConfigured) return;
+
+            configureCuda(false);
+            nativeBackendConfigured = true;
+        }
+    }
+
+    internal static void ResetNativeBackendConfigurationForTests(Action<bool>? configureCudaOverride = null)
+    {
+        lock (NativeBackendConfigurationLock)
+        {
+            nativeBackendConfigured = false;
+            configureCuda = configureCudaOverride ?? (static enabled => NativeLibraryConfig.Instance.WithCuda(enabled));
         }
     }
 

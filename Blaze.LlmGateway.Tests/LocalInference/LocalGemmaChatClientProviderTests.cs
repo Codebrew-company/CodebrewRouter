@@ -9,6 +9,26 @@ namespace Blaze.LlmGateway.Tests.LocalInference;
 public sealed class LocalGemmaChatClientProviderTests
 {
     [Fact]
+    public void ConfigureNativeBackendForCpu_DisablesCudaBeforeNativeLoad()
+    {
+        var cudaSelections = new List<bool>();
+
+        try
+        {
+            LLamaSharpLocalGemmaRuntime.ResetNativeBackendConfigurationForTests(cudaSelections.Add);
+
+            LLamaSharpLocalGemmaRuntime.ConfigureNativeBackendForCpu();
+            LLamaSharpLocalGemmaRuntime.ConfigureNativeBackendForCpu();
+
+            cudaSelections.Should().Equal([false]);
+        }
+        finally
+        {
+            LLamaSharpLocalGemmaRuntime.ResetNativeBackendConfigurationForTests();
+        }
+    }
+
+    [Fact]
     public async Task EnsureLoadedAsync_WhenDisabled_ThrowsImmediatelyWithoutCallingProvider()
     {
         var provider = new Mock<IModelDistributionProvider>(MockBehavior.Strict);
