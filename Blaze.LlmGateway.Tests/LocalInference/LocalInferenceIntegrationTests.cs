@@ -303,7 +303,7 @@ public class LocalInferenceIntegrationTests
     public void ApiDefaultLocalInferenceConfig_UsesGemma4RemoteBootstrap()
     {
         const string expectedModelPath =
-            "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf";
+            "https://huggingface.co/lm-kit/gemma-4-e4b-instruct-lmk/resolve/main/Gemma-4-E4B-It-7.5B-Q4_K_M.lmk";
 
         var root = FindRepositoryRoot();
         var configuration = new ConfigurationBuilder()

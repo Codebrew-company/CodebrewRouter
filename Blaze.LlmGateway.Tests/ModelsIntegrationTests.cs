@@ -373,7 +373,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         using var json = JsonDocument.Parse(body);
 
         var backingModels = json.RootElement.GetProperty("backingModels");
-        // At least the local LLamaSharp provider should be available
+        // At least the local provider should be available
         Assert.True(backingModels.GetArrayLength() > 0);
 
         var providers = backingModels.EnumerateArray()
@@ -475,7 +475,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                 new AvailableModel("Phi-4-mini-instruct-cuda-gpu:5", "FoundryLocal", "openai", "configured"),
                 new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "live"),
                 new AvailableModel("local-model", "LmStudio", "lmstudio", "configured"),
-                new AvailableModel("local-gemma", "LocalGemma", "llamasharp", "configured")
+                new AvailableModel("local-gemma", "LocalGemma", "lmkit", "configured")
             ]);
 
         public Task<AvailableModel?> FindByIdAsync(string modelId, CancellationToken cancellationToken = default)

@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace Blaze.LlmGateway.LocalInference;
 
 /// <summary>
-/// MEAI adapter for local Gemma inference through LLamaSharp.
-/// The provider materializes a local or remote model source lazily, then keeps one runtime resident.
+/// MEAI adapter for local Gemma inference.
+/// The provider materializes a local or remote model source lazily, then keeps one LM-Kit runtime resident.
 /// </summary>
 public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaModelState, IAsyncDisposable
 {
@@ -37,7 +37,7 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         LocalInferenceOptions options,
         IModelDistributionProvider? modelProvider = null,
         ILogger<LocalGemmaChatClient>? logger = null)
-        : this(options, modelProvider, logger, static (opts, path) => new LLamaSharpLocalGemmaRuntime(opts, path))
+        : this(options, modelProvider, logger, null)
     {
     }
 
@@ -45,17 +45,17 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         LocalInferenceOptions options,
         IModelDistributionProvider? modelProvider,
         ILogger<LocalGemmaChatClient>? logger,
-        Func<LocalInferenceOptions, string, ILocalGemmaRuntime> runtimeFactory)
+        Func<LocalInferenceOptions, string, ILocalGemmaRuntime>? runtimeFactory = null)
         : base(new NoOpChatClientWithMetadata())
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _modelProvider = modelProvider;
         _logger = logger;
-        _runtimeFactory = runtimeFactory ?? throw new ArgumentNullException(nameof(runtimeFactory));
+        _runtimeFactory = runtimeFactory ?? DefaultRuntimeFactory(logger);
 
         if (!options.Enabled)
         {
-            _unavailableReason = "LocalGemma is not loaded because local LLamaSharp inference is disabled.";
+            _unavailableReason = "LocalGemma is not loaded because local inference is disabled.";
         }
         else if (string.IsNullOrWhiteSpace(options.ModelPath))
         {
@@ -199,6 +199,9 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaMode
         if (_logger is not null) LocalModelLog.Resolve(_logger, modelPath, resolved);
         return resolved;
     }
+
+    private static Func<LocalInferenceOptions, string, ILocalGemmaRuntime> DefaultRuntimeFactory(ILogger<LocalGemmaChatClient>? logger)
+        => (options, resolvedModelPath) => new LmKitLocalGemmaRuntime(options, resolvedModelPath, logger);
 }
 
 internal sealed class NoOpChatClientWithMetadata : IChatClient

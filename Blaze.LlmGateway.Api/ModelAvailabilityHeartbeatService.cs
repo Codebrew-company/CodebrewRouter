@@ -511,7 +511,7 @@ public sealed class ModelAvailabilityHeartbeatService(
             models.Add(new AvailableModel(
                 "local-gemma",
                 "LocalGemma",
-                "llamasharp",
+                "lmkit",
                 "configured",
                 _options.LocalInference.ModelPath,
                 Enabled: false,
@@ -525,7 +525,7 @@ public sealed class ModelAvailabilityHeartbeatService(
             providers,
             "LocalGemma",
             "local-gemma",
-            "llamasharp",
+            "lmkit",
             _options.LocalInference.ModelPath,
             isConfigured: true,
             checkedAt);
@@ -535,7 +535,7 @@ public sealed class ModelAvailabilityHeartbeatService(
     {
         if (!options.Enabled)
         {
-            return "LocalGemma is not loaded because local LLamaSharp inference is disabled.";
+            return "LocalGemma is not loaded because local inference is disabled.";
         }
 
         if (string.IsNullOrWhiteSpace(options.ModelPath))

@@ -1,7 +1,7 @@
 namespace Blaze.LlmGateway.Core.Configuration;
 
 /// <summary>
-/// Configuration for local LLM inference via Gemma + LLamaSharp.
+/// Configuration for local LLM inference via Gemma using LM-Kit.
 /// Binds from <c>LlmGateway:LocalInference</c> in appsettings.
 /// </summary>
 public class LocalInferenceOptions

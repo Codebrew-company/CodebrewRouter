@@ -9,7 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Bcl.Memory" Version="9.0.4" />
+    <PackageReference Include="DotLLM.Server" Version="0.1.0-preview.3">
+      <IncludeAssets>compile;runtime</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>

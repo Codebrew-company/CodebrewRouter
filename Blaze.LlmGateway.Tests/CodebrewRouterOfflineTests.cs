@@ -118,7 +118,7 @@ public sealed class CodebrewRouterOfflineTests
     public async Task AvailabilitySeed_WhenLocalGemmaModelPathIsRemoteUrl_EnablesLocalGemmaAndCodebrewRouter()
     {
         const string gemma4Url =
-            "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf";
+            "https://huggingface.co/lm-kit/gemma-4-e4b-instruct-lmk/resolve/main/Gemma-4-E4B-It-7.5B-Q4_K_M.lmk";
         var services = new ServiceCollection();
         var serviceProvider = services.BuildServiceProvider();
         var registry = new ModelAvailabilityRegistry();
@@ -243,7 +243,7 @@ public sealed class CodebrewRouterOfflineTests
                 new AvailableModel(
                     "local-gemma",
                     "LocalGemma",
-                    "llamasharp",
+                    "lmkit",
                     "configured",
                     Enabled: false,
                     ErrorMessage: localGemmaError,
@@ -343,3 +343,4 @@ public sealed class CodebrewRouterOfflineTests
             => Task.FromResult<AvailableModel?>(null);
     }
 }
+

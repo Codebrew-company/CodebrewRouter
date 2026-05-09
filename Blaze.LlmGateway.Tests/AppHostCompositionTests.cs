@@ -59,7 +59,7 @@ public class AppHostCompositionTests
         var appHostConfig = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "appsettings.json"));
         var apiConfig = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.Api", "appsettings.json"));
         const string gemma4Url =
-            "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf";
+            "https://huggingface.co/lm-kit/gemma-4-e4b-instruct-lmk/resolve/main/Gemma-4-E4B-It-7.5B-Q4_K_M.lmk";
 
         Assert.Contains($"\"ModelPath\": \"{gemma4Url}\"", appHostConfig);
         Assert.Contains("\"CacheDirectory\": \".llm-cache\"", appHostConfig);

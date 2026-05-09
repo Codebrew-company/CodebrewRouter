@@ -80,6 +80,10 @@ public static class AppHostComposition
             localInferenceWarmupEnabled,
             localInferenceBlockStartupUntilWarm,
             localInferenceWarmupTimeoutSeconds);
+        aspireLogger.LogDebug(
+            "  │  ├─ LocalInference runtime=LMKit, cache={CacheDirectory}, download timeout={DownloadTimeoutSeconds}s",
+            localInferenceCacheDirectory,
+            localInferenceDownloadTimeoutSeconds);
 
         if (!string.IsNullOrWhiteSpace(gatewayListenUrls))
         {

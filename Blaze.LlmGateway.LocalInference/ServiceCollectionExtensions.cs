@@ -222,7 +222,7 @@ public sealed class LocalGemmaWarmupService(
 
         if (!opts.Enabled)
         {
-            const string reason = "Local LLamaSharp inference is disabled.";
+            const string reason = "Local inference is disabled.";
             state.Update(LocalGemmaWarmupStatus.Skipped, opts.ModelPath, reason, stopwatch.Elapsed);
             LocalWarmupLog.Skip(logger, reason, opts.ModelPath);
             return;
@@ -258,14 +258,14 @@ public sealed class LocalGemmaWarmupService(
             var modelState = ResolveModelState(client)
                 ?? throw new InvalidOperationException("LocalGemma chat client does not expose local model load state.");
 
-            // Transition to Downloading: covers both download (if URL) and LLamaSharp load
+            // Transition to Downloading: covers both download (if URL) and local runtime load.
             state.Update(LocalGemmaWarmupStatus.Downloading, opts.ModelPath, "Resolving local Gemma model source.", stopwatch.Elapsed);
 
-            // EnsureLoadedAsync handles download (if URL) then LLamaSharp load.
-            // The callback fires when the file is local and LLamaSharp is about to load.
+            // EnsureLoadedAsync handles download (if URL) then runtime load.
+            // The callback fires when the file is local and the runtime is about to start loading.
             await modelState.EnsureLoadedAsync(cancellationToken, () =>
             {
-                state.Update(LocalGemmaWarmupStatus.Loading, modelState.ModelPath, "Loading local Gemma model into LLamaSharp.", stopwatch.Elapsed);
+                state.Update(LocalGemmaWarmupStatus.Loading, modelState.ModelPath, "Loading local Gemma model into the local runtime.", stopwatch.Elapsed);
             });
 
             LocalWarmupLog.Load(logger, modelState.ModelPath, modelState.IsModelLoaded, stopwatch.ElapsedMilliseconds);
