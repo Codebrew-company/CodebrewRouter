@@ -41,6 +41,8 @@ public static class AppHostComposition
         var localInferenceDownloadTimeoutSeconds = builder.Configuration.GetValue(
             "LlmGateway:LocalInference:DownloadTimeoutSeconds",
             3600);
+        var localInferenceSystemPrompt = builder.Configuration.GetValue<string>(
+            "LlmGateway:LocalInference:SystemPrompt") ?? "";
         var localInferenceWarmupEnabled = builder.Configuration.GetValue(
             "LlmGateway:LocalInference:WarmupEnabled",
             true);
@@ -68,6 +70,7 @@ public static class AppHostComposition
             .WithEnvironment("LlmGateway__LocalInference__ModelPath", localInferenceModelPath)
             .WithEnvironment("LlmGateway__LocalInference__CacheDirectory", localInferenceCacheDirectory)
             .WithEnvironment("LlmGateway__LocalInference__DownloadTimeoutSeconds", localInferenceDownloadTimeoutSeconds.ToString())
+            .WithEnvironment("LlmGateway__LocalInference__SystemPrompt", localInferenceSystemPrompt)
             .WithEnvironment("LlmGateway__LocalInference__WarmupEnabled", localInferenceWarmupEnabled.ToString())
             .WithEnvironment("LlmGateway__LocalInference__BlockStartupUntilWarm", localInferenceBlockStartupUntilWarm.ToString())
             .WithEnvironment("LlmGateway__LocalInference__WarmupTimeoutSeconds", localInferenceWarmupTimeoutSeconds.ToString());
@@ -145,7 +148,7 @@ public static class AppHostComposition
                         ReferenceExpression.Create($"{apiEndpoint}/v1");
                 })
                 .WithEnvironment("OPENAI_API_KEY", "sk-blaze-devui")
-                .WithEnvironment("BLAZE_GATEWAY_MODEL", "codebrew-router")
+                .WithEnvironment("BLAZE_GATEWAY_MODEL", "codebrewRouter")
                 .WaitFor(api);
         }
         else

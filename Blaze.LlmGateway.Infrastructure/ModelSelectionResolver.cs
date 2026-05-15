@@ -25,7 +25,7 @@ public sealed class ModelSelectionResolver(
     {
         if (gatewayOptions.Value.OfflineOnly)
         {
-            if (IsCodebrewRouterModel(modelId))
+            if (IsVirtualModel(modelId))
             {
                 var codebrewRouter = serviceProvider.GetKeyedService<IChatClient>("CodebrewRouter");
                 if (codebrewRouter is not null)
@@ -40,6 +40,19 @@ public sealed class ModelSelectionResolver(
             logger.LogInformation("Offline-only mode active; resolving model {ModelId} to LocalGemma", modelId);
             return serviceProvider.GetKeyedService<IChatClient>("LocalGemma")
                 ?? throw new InvalidOperationException("Offline-only mode is enabled, but the LocalGemma provider is not registered.");
+        }
+
+        if (IsVirtualModel(modelId))
+        {
+            var codebrewRouter = serviceProvider.GetKeyedService<IChatClient>("CodebrewRouter");
+            if (codebrewRouter is not null)
+            {
+                logger.LogDebug("Resolving virtual model {ModelId} to CodebrewRouter", modelId);
+                return codebrewRouter;
+            }
+
+            logger.LogWarning("Virtual model {ModelId} requested, but CodebrewRouter is not registered", modelId);
+            return null;
         }
 
         var model = await modelCatalog.FindByIdAsync(modelId, cancellationToken);
@@ -78,9 +91,6 @@ public sealed class ModelSelectionResolver(
         return serviceProvider.GetKeyedService<IChatClient>(model.Provider);
     }
 
-    private bool IsCodebrewRouterModel(string modelId)
-        => string.Equals(
-            modelId,
-            gatewayOptions.Value.CodebrewRouter.ModelId,
-            StringComparison.OrdinalIgnoreCase);
+    private bool IsVirtualModel(string modelId)
+        => gatewayOptions.Value.FindVirtualModel(modelId) is not null;
 }

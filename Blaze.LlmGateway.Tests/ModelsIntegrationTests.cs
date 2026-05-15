@@ -327,6 +327,23 @@ public class ModelsIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Models_ContainsYardlyConfiguredVirtualModel()
+    {
+        var response = await _client!.GetAsync("/v1/models");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var yardly = json.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Single(model => string.Equals(model.GetProperty("id").GetString(), "yardly", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("model", yardly.GetProperty("object").GetString());
+        Assert.Equal("CodebrewRouter", yardly.GetProperty("provider").GetString());
+        Assert.Equal("yardly", yardly.GetProperty("ownedBy").GetString());
+        Assert.Equal("virtual", yardly.GetProperty("source").GetString());
+    }
+
+    [Fact]
     public async Task CodebrewRouterModelDetails_ReturnsVirtualModelMetadata()
     {
         var response = await _client!.GetAsync("/v1/models/codebrewRouter");
@@ -384,6 +401,29 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.DoesNotContain("LmStudio", providers);
         Assert.DoesNotContain("AzureFoundry", providers);
         Assert.DoesNotContain("FoundryLocal", providers);
+    }
+
+    [Fact]
+    public async Task YardlyModelDetails_ReturnsConfiguredVirtualModelMetadata()
+    {
+        var response = await _client!.GetAsync("/v1/models/yardly");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("yardly", json.RootElement.GetProperty("id").GetString());
+        Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
+        Assert.Equal("yardly", json.RootElement.GetProperty("ownedBy").GetString());
+
+        var generalRule = json.RootElement.GetProperty("fallbackRules")
+            .EnumerateArray()
+            .Single(rule => string.Equals(rule.GetProperty("taskType").GetString(), "General", StringComparison.OrdinalIgnoreCase));
+        var providers = generalRule.GetProperty("providers")
+            .EnumerateArray()
+            .Select(provider => provider.GetString() ?? "")
+            .ToArray();
+
+        Assert.Equal(new[] { "LocalGemma" }, providers);
     }
 
     [Fact]

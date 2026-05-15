@@ -46,19 +46,35 @@ public static class ModelsEndpoint
         IModelAvailabilityRegistry availabilityRegistry,
         IOptions<LlmGatewayOptions> options,
         CancellationToken cancellationToken)
+        => await HandleVirtualModelAsync(
+            string.IsNullOrWhiteSpace(options.Value.CodebrewRouter.ModelId)
+                ? "codebrewRouter"
+                : options.Value.CodebrewRouter.ModelId,
+            modelCatalog,
+            availabilityRegistry,
+            options,
+            cancellationToken);
+
+    /// <summary>Handle virtual model detail requests.</summary>
+    public static async Task<IResult> HandleVirtualModelAsync(
+        string modelId,
+        IModelCatalog modelCatalog,
+        IModelAvailabilityRegistry availabilityRegistry,
+        IOptions<LlmGatewayOptions> options,
+        CancellationToken cancellationToken)
     {
-        var codebrewRouter = options.Value.CodebrewRouter;
-        if (!codebrewRouter.Enabled || string.IsNullOrWhiteSpace(codebrewRouter.ModelId))
+        var virtualModel = options.Value.FindVirtualModel(modelId);
+        if (virtualModel is null)
         {
             return Results.NotFound(new ErrorResponse(
                 new ErrorDetail(
-                    "The codebrewRouter virtual model is disabled or not configured.",
+                    $"The virtual model '{modelId}' is disabled or not configured.",
                     "not_found",
                     "model_not_found")));
         }
 
         var offlineOnly = options.Value.OfflineOnly;
-        var providerKeys = codebrewRouter.FallbackRules.Values
+        var providerKeys = virtualModel.FallbackRules.Values
             .SelectMany(providers => GetEffectiveFallbackProviders(providers, offlineOnly))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -81,8 +97,8 @@ public static class ModelsEndpoint
             .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var availability = availabilityRegistry.FindModel(codebrewRouter.ModelId, includeUnavailable: true);
-        var fallbackRules = codebrewRouter.FallbackRules
+        var availability = availabilityRegistry.FindModel(virtualModel.ModelId, includeUnavailable: true);
+        var fallbackRules = virtualModel.FallbackRules
             .OrderBy(rule => rule.Key, StringComparer.OrdinalIgnoreCase)
             .Select(rule => new CodebrewRouterFallbackRule(
                 TaskType: rule.Key,
@@ -91,11 +107,11 @@ public static class ModelsEndpoint
             .ToList();
 
         var response = new CodebrewRouterModelsResponse(
-            Id: codebrewRouter.ModelId,
+            Id: virtualModel.ModelId,
             Object: "model",
-            Provider: "CodebrewRouter",
-            OwnedBy: "codebrew",
-            Source: "virtual",
+            Provider: virtualModel.Provider,
+            OwnedBy: virtualModel.OwnedBy,
+            Source: virtualModel.Source,
             Enabled: availability?.Enabled ?? false,
             ErrorMessage: availability?.ErrorMessage,
             BackingModels: backingModels,

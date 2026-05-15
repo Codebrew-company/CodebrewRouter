@@ -44,7 +44,28 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
             }
         }
 
-        return new ChatMessageDto(role, content);
+        string? name = null;
+        if (root.TryGetProperty("name", out var nameElement) &&
+            nameElement.ValueKind == JsonValueKind.String)
+        {
+            name = nameElement.GetString();
+        }
+
+        string? toolCallId = null;
+        if (root.TryGetProperty("tool_call_id", out var toolCallIdElement) &&
+            toolCallIdElement.ValueKind == JsonValueKind.String)
+        {
+            toolCallId = toolCallIdElement.GetString();
+        }
+
+        IList<ToolCallDto>? toolCalls = null;
+        if (root.TryGetProperty("tool_calls", out var toolCallsElement) &&
+            toolCallsElement.ValueKind == JsonValueKind.Array)
+        {
+            toolCalls = toolCallsElement.Deserialize<IList<ToolCallDto>>(options);
+        }
+
+        return new ChatMessageDto(role, content, name, toolCallId, toolCalls);
     }
 
     public override void Write(Utf8JsonWriter writer, ChatMessageDto value, JsonSerializerOptions options)
@@ -52,6 +73,22 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
         writer.WriteStartObject();
         writer.WriteString("role", value.Role);
         writer.WriteString("content", value.Content);
+        if (!string.IsNullOrWhiteSpace(value.Name))
+        {
+            writer.WriteString("name", value.Name);
+        }
+
+        if (!string.IsNullOrWhiteSpace(value.ToolCallId))
+        {
+            writer.WriteString("tool_call_id", value.ToolCallId);
+        }
+
+        if (value.ToolCalls is not null)
+        {
+            writer.WritePropertyName("tool_calls");
+            JsonSerializer.Serialize(writer, value.ToolCalls, options);
+        }
+
         writer.WriteEndObject();
     }
 }

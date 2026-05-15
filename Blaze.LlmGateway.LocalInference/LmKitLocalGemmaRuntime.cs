@@ -61,17 +61,17 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             yield break;
         }
 
+        var nonSystemMessages = messages.Where(message => message.Role != ChatRole.System).ToList();
+        if (nonSystemMessages.Count == 0)
+        {
+            yield break;
+        }
+
         await _inferenceLock.WaitAsync(cancellationToken);
         try
         {
-            using var conversation = new MultiTurnConversation(_model, ResolveContextSize());
+            using var conversation = CreateConversation(messages);
             ConfigureConversation(conversation, messages, options);
-
-            var nonSystemMessages = messages.Where(message => message.Role != ChatRole.System).ToList();
-            if (nonSystemMessages.Count == 0)
-            {
-                yield break;
-            }
 
             var prompt = nonSystemMessages[^1].Text ?? string.Empty;
             var updates = Channel.CreateUnbounded<ChatResponseUpdate>(new UnboundedChannelOptions
@@ -173,15 +173,41 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             conversation.SystemPrompt = string.Join(Environment.NewLine + Environment.NewLine, systemPromptParts);
         }
 
-        var historyMessages = messages
-            .Where(message => message.Role != ChatRole.System)
-            .Take(Math.Max(0, messages.Count(message => message.Role != ChatRole.System) - 1));
-
-        foreach (var message in historyMessages)
+        foreach (var controlToken in ChannelTextFilter.ControlTokens)
         {
-            conversation.ChatHistory.AddMessage(MapRole(message.Role), message.Text ?? string.Empty);
+            conversation.StopSequences.Add(controlToken);
         }
+
     }
+
+    private MultiTurnConversation CreateConversation(IReadOnlyList<ChatMessage> messages)
+    {
+        var historyEntries = BuildSeededHistoryEntries(messages);
+        if (historyEntries.Count == 0)
+        {
+            return new MultiTurnConversation(_model, ResolveContextSize());
+        }
+
+        var chatHistory = new ChatHistory(_model);
+        foreach (var (role, content) in historyEntries)
+        {
+            chatHistory.AddMessage(role, content);
+        }
+
+        return new MultiTurnConversation(
+            _model,
+            chatHistory,
+            ResolveContextSize(),
+            textGenerationSettings: null!);
+    }
+
+    internal static IReadOnlyList<(AuthorRole Role, string Content)> BuildSeededHistoryEntries(
+        IReadOnlyList<ChatMessage> messages)
+        => messages
+            .Where(message => message.Role != ChatRole.System)
+            .Take(Math.Max(0, messages.Count(message => message.Role != ChatRole.System) - 1))
+            .Select(message => (Role: MapRole(message.Role), Content: message.Text ?? string.Empty))
+            .ToArray();
 
     private int ResolveContextSize()
         => _options.MaxContextTokens > 0 ? _options.MaxContextTokens : -1;
@@ -234,6 +260,28 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
     private sealed class ChannelTextFilter
     {
         private const string ChannelMarker = "<|channel>";
+        internal static readonly string[] ControlTokens =
+        [
+            "<turn|>",
+            "<end_of_turn>",
+            "<|eot_id|>",
+            "<|endoftext|>",
+            "<|im_end|>",
+            "</s>"
+        ];
+        private static readonly string[] PlainThinkingPreludePrefixes =
+        [
+            "Here's a thinking process",
+            "Here is a thinking process",
+            "I'll think through",
+            "I will think through",
+            "Let's think through"
+        ];
+        private static readonly string[] PlainFinalMarkers =
+        [
+            "Final response:",
+            "Final answer:"
+        ];
         private static readonly string[] KnownChannels = ["thought", "analysis", "reasoning", "scratchpad", "final", "assistant", "answer", "response", "output"];
         private static readonly HashSet<string> VisibleChannels = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -248,10 +296,12 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
         private string? _activeChannel;
         private bool _sawExplicitChannel;
         private bool _emittedVisibleText;
+        private bool _suppressPlainThinkingPrelude;
+        private bool _sawStopControlToken;
 
         public IEnumerable<string> Append(string chunk)
         {
-            if (string.IsNullOrEmpty(chunk))
+            if (string.IsNullOrEmpty(chunk) || _sawStopControlToken)
             {
                 yield break;
             }
@@ -296,15 +346,49 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
 
         private IEnumerable<string> FlushWithoutMarker()
         {
+            foreach (var visibleText in FlushPlainThinkingPrelude())
+            {
+                yield return visibleText;
+            }
+
+            if (_sawStopControlToken || _suppressPlainThinkingPrelude || ShouldWaitForPlainThinkingPreludeDecision())
+            {
+                yield break;
+            }
+
+            if (TryConsumeControlTokenPrefix(out var prefixBeforeStop))
+            {
+                foreach (var text in EmitOrSuppress(prefixBeforeStop))
+                {
+                    yield return text;
+                }
+
+                yield break;
+            }
+
             var trailingMarkerLength = LongestMarkerPrefixAtEnd();
-            var flushLength = _buffer.Length - trailingMarkerLength;
+            var trailingControlTokenLength = LongestControlTokenPrefixAtEnd();
+            var flushLength = _buffer.Length - Math.Max(trailingMarkerLength, trailingControlTokenLength);
             if (flushLength <= 0)
             {
                 yield break;
             }
 
-            var text = _buffer.ToString(0, flushLength);
+            var textToFlush = _buffer.ToString(0, flushLength);
             _buffer.Remove(0, flushLength);
+
+            foreach (var text in EmitOrSuppress(textToFlush))
+            {
+                yield return text;
+            }
+        }
+
+        private IEnumerable<string> EmitOrSuppress(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                yield break;
+            }
 
             if (ShouldEmitCurrentChannelText(text))
             {
@@ -322,6 +406,21 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             foreach (var text in FlushWithoutMarker())
             {
                 yield return text;
+            }
+
+            if (_sawStopControlToken || _suppressPlainThinkingPrelude)
+            {
+                yield break;
+            }
+
+            if (TryConsumeControlTokenPrefix(out var prefixBeforeStop))
+            {
+                foreach (var text in EmitOrSuppress(prefixBeforeStop))
+                {
+                    yield return text;
+                }
+
+                yield break;
             }
 
             if (_buffer.Length == 0)
@@ -350,6 +449,59 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
                 {
                     yield return _suppressed.ToString();
                 }
+                yield break;
+            }
+        }
+
+        private IEnumerable<string> FlushPlainThinkingPrelude()
+        {
+            if (_sawExplicitChannel || _emittedVisibleText)
+            {
+                yield break;
+            }
+
+            if (!_suppressPlainThinkingPrelude)
+            {
+                var buffered = _buffer.ToString();
+                if (StartsWithPlainThinkingPrelude(buffered))
+                {
+                    _suppressPlainThinkingPrelude = true;
+                }
+                else
+                {
+                    yield break;
+                }
+            }
+
+            while (_suppressPlainThinkingPrelude)
+            {
+                var buffered = _buffer.ToString();
+                if (TryFindFinalMarker(buffered, out var markerIndex, out var markerLength))
+                {
+                    RememberSuppressed(buffered[..(markerIndex + markerLength)]);
+                    _buffer.Remove(0, markerIndex + markerLength);
+                    TrimLeadingWhitespace(_buffer);
+                    _suppressPlainThinkingPrelude = false;
+
+                    if (_buffer.Length > 0)
+                    {
+                        var visible = _buffer.ToString();
+                        _buffer.Clear();
+                        _emittedVisibleText = true;
+                        yield return visible;
+                    }
+
+                    yield break;
+                }
+
+                var retainLength = Math.Min(_buffer.Length, LongestFinalMarkerLength() - 1);
+                var suppressLength = _buffer.Length - retainLength;
+                if (suppressLength > 0)
+                {
+                    RememberSuppressed(_buffer.ToString(0, suppressLength));
+                    _buffer.Remove(0, suppressLength);
+                }
+
                 yield break;
             }
         }
@@ -447,8 +599,91 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             return 0;
         }
 
+        private bool TryConsumeControlTokenPrefix(out string prefixBeforeStop)
+        {
+            var earliestIndex = -1;
+            foreach (var controlToken in ControlTokens)
+            {
+                var index = _buffer.ToString().IndexOf(controlToken, StringComparison.Ordinal);
+                if (index >= 0 && (earliestIndex < 0 || index < earliestIndex))
+                {
+                    earliestIndex = index;
+                }
+            }
+
+            if (earliestIndex < 0)
+            {
+                prefixBeforeStop = string.Empty;
+                return false;
+            }
+
+            prefixBeforeStop = _buffer.ToString(0, earliestIndex);
+            _buffer.Clear();
+            _sawStopControlToken = true;
+            return true;
+        }
+
+        private int LongestControlTokenPrefixAtEnd()
+        {
+            var max = Math.Min(_buffer.Length, ControlTokens.Max(token => token.Length) - 1);
+            for (var length = max; length > 0; length--)
+            {
+                var suffix = _buffer.ToString(_buffer.Length - length, length);
+                if (ControlTokens.Any(token => token.StartsWith(suffix, StringComparison.Ordinal)))
+                {
+                    return length;
+                }
+            }
+
+            return 0;
+        }
+
         private static int IndexOf(StringBuilder builder, string value)
             => builder.ToString().IndexOf(value, StringComparison.Ordinal);
+
+        private bool ShouldWaitForPlainThinkingPreludeDecision()
+        {
+            if (_sawExplicitChannel || _emittedVisibleText || _buffer.Length == 0)
+            {
+                return false;
+            }
+
+            var buffered = _buffer.ToString();
+            return PlainThinkingPreludePrefixes.Any(prefix =>
+                prefix.StartsWith(buffered, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool StartsWithPlainThinkingPrelude(string text)
+            => PlainThinkingPreludePrefixes.Any(prefix =>
+                text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+        private static bool TryFindFinalMarker(string text, out int markerIndex, out int markerLength)
+        {
+            foreach (var marker in PlainFinalMarkers)
+            {
+                markerIndex = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                if (markerIndex >= 0)
+                {
+                    markerLength = marker.Length;
+                    return true;
+                }
+            }
+
+            markerIndex = -1;
+            markerLength = 0;
+            return false;
+        }
+
+        private static int LongestFinalMarkerLength()
+            => PlainFinalMarkers.Max(marker => marker.Length);
+
+        private static void TrimLeadingWhitespace(StringBuilder builder)
+        {
+            while (builder.Length > 0 && char.IsWhiteSpace(builder[0]))
+            {
+                builder.Remove(0, 1);
+            }
+        }
 
         private static int IndexOfNewline(StringBuilder builder, int startIndex)
         {

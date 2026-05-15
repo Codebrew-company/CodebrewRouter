@@ -128,8 +128,8 @@ public sealed class ModelAvailabilityHeartbeatService(
             providers,
             cancellationToken);
 
-        logger.LogDebug("  ├─ Adding CodebrewRouter virtual model");
-        AddCodebrewRouterModel(models, providers, checkedAt);
+        logger.LogDebug("  ├─ Adding configured virtual models");
+        AddVirtualModels(models, providers, checkedAt);
 
         // Probe OpenCode Go cloud endpoint
         logger.LogDebug("  ├─ Probing OpenCode Go");
@@ -162,7 +162,7 @@ public sealed class ModelAvailabilityHeartbeatService(
 
         if (_options.OfflineOnly)
         {
-            AddCodebrewRouterModel(models, providers, checkedAt);
+            AddVirtualModels(models, providers, checkedAt);
             return;
         }
 
@@ -185,7 +185,7 @@ public sealed class ModelAvailabilityHeartbeatService(
             IsLmStudioConfigured(_options.Providers.LmStudio),
             checkedAt);
 
-        AddCodebrewRouterModel(models, providers, checkedAt);
+        AddVirtualModels(models, providers, checkedAt);
 
         // Seed all 14 OpenCodeGo models (enabled initially since API key is present;
         // the live probe will flip them to disabled if the endpoint is unreachable)
@@ -456,13 +456,13 @@ public sealed class ModelAvailabilityHeartbeatService(
         }
     }
 
-    private void AddCodebrewRouterModel(
+    private void AddVirtualModels(
         ICollection<AvailableModel> models,
         ICollection<ProviderAvailabilitySnapshot> providers,
         DateTimeOffset checkedAt)
     {
-        var codebrewOptions = _options.CodebrewRouter;
-        if (!codebrewOptions.Enabled || string.IsNullOrWhiteSpace(codebrewOptions.ModelId))
+        var virtualModels = _options.GetEffectiveVirtualModels();
+        if (virtualModels.Count == 0)
         {
             return;
         }
@@ -471,31 +471,46 @@ public sealed class ModelAvailabilityHeartbeatService(
             .Where(model => model.Enabled)
             .Select(model => model.Provider)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var fallbackProviders = codebrewOptions.FallbackRules.Values
-            .SelectMany(providers => providers)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var hasBackingProvider = fallbackProviders.Any(provider => availableProviders.Contains(provider));
-        var unavailableProviderReasons = fallbackProviders
-            .Where(provider => !availableProviders.Contains(provider))
-            .Select(provider => FormatUnavailableProviderReason(provider, providers))
-            .ToArray();
-        var unavailableReason = hasBackingProvider
-            ? null
-            : BuildNoBackingProviderReason(unavailableProviderReasons);
 
-        models.Add(new AvailableModel(
-            codebrewOptions.ModelId,
-            "CodebrewRouter",
-            "codebrew",
-            "virtual",
-            Enabled: hasBackingProvider,
-            ErrorMessage: unavailableReason,
-            LastCheckedUtc: checkedAt));
+        var anyVirtualModelAvailable = false;
+        var providerErrors = new List<string>();
+
+        foreach (var virtualModel in virtualModels)
+        {
+            var fallbackProviders = virtualModel.FallbackRules.Values
+                .SelectMany(providers => providers)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var hasBackingProvider = fallbackProviders.Any(provider => availableProviders.Contains(provider));
+            anyVirtualModelAvailable |= hasBackingProvider;
+
+            var unavailableProviderReasons = fallbackProviders
+                .Where(provider => !availableProviders.Contains(provider))
+                .Select(provider => FormatUnavailableProviderReason(provider, providers))
+                .ToArray();
+            var unavailableReason = hasBackingProvider
+                ? null
+                : BuildNoBackingProviderReason(unavailableProviderReasons);
+
+            if (unavailableReason is not null)
+            {
+                providerErrors.Add($"{virtualModel.ModelId}: {unavailableReason}");
+            }
+
+            models.Add(new AvailableModel(
+                virtualModel.ModelId,
+                virtualModel.Provider,
+                virtualModel.OwnedBy,
+                virtualModel.Source,
+                Enabled: hasBackingProvider,
+                ErrorMessage: unavailableReason,
+                LastCheckedUtc: checkedAt));
+        }
+
         providers.Add(new ProviderAvailabilitySnapshot(
             "CodebrewRouter",
-            hasBackingProvider,
-            unavailableReason,
+            anyVirtualModelAvailable,
+            providerErrors.Count == 0 ? null : string.Join("; ", providerErrors),
             checkedAt));
     }
 

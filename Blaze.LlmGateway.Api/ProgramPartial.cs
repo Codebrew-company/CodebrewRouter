@@ -26,9 +26,10 @@ public static class LiteLlmEndpoints
             ChatCompletionRequest req,
             IChatClient chatClient,
             IModelSelectionResolver modelSelectionResolver,
+            IOptions<LlmGatewayOptions> gatewayOptions,
             HttpContext httpContext,
             CancellationToken ct) =>
-            await ChatCompletionsEndpoint.HandleAsync(req, chatClient, modelSelectionResolver, httpContext, ct))
+            await ChatCompletionsEndpoint.HandleAsync(req, chatClient, modelSelectionResolver, gatewayOptions, httpContext, ct))
         .WithName("ChatCompletions")
         .WithTags(OpenAiCompatibleTag)
         .WithSummary("Create a chat completion")
@@ -98,5 +99,21 @@ public static class LiteLlmEndpoints
         .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json")
         .Produces(StatusCodes.Status500InternalServerError)
         .WithMetadata(new EndpointNameMetadata("get-codebrewrouter-model"));
+
+        app.MapGet("/v1/models/{modelId}", (
+            string modelId,
+            IModelCatalog modelCatalog,
+            IModelAvailabilityRegistry availabilityRegistry,
+            IOptions<LlmGatewayOptions> options,
+            CancellationToken ct) =>
+            ModelsEndpoint.HandleVirtualModelAsync(modelId, modelCatalog, availabilityRegistry, options, ct))
+        .WithName("GetVirtualModel")
+        .WithTags(DiscoveryTag)
+        .WithSummary("Get virtual model details")
+        .WithDescription("Returns details for a configured virtual model, including backing provider models and fallback order.")
+        .Produces<CodebrewRouterModelsResponse>(StatusCodes.Status200OK, "application/json")
+        .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json")
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithMetadata(new EndpointNameMetadata("get-virtual-model"));
     }
 }

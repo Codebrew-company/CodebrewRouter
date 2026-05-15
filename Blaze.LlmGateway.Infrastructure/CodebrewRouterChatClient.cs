@@ -26,6 +26,10 @@ public sealed class CodebrewRouterChatClient(
     IServiceProvider serviceProvider,
     ILogger<CodebrewRouterChatClient> logger) : DelegatingChatClient(innerClient)
 {
+    private const string EmptyProviderResponseReason = "Provider completed without emitting a response chunk.";
+    private const string EmptyVisibleResponseMessage =
+        "I couldn't produce a visible response. Please try again or rephrase.";
+
     private CodebrewRouterOptions Options => options.Value;
     private LlmGatewayOptions GatewayOptions => gatewayOptions.Value;
 
@@ -59,6 +63,7 @@ public sealed class CodebrewRouterChatClient(
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
+        var activeOptions = ResolveVirtualModelOptions(options);
 
         Log(new RouterStartEvent(messageList.Count));
 
@@ -71,7 +76,7 @@ public sealed class CodebrewRouterChatClient(
             cleanSw.ElapsedMilliseconds));
 
         var resolveSw = System.Diagnostics.Stopwatch.StartNew();
-        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, cancellationToken);
+        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, activeOptions, cancellationToken);
         resolveSw.Stop();
         var chain = string.Join(", ", providers.Select(ModelName));
 
@@ -91,7 +96,7 @@ public sealed class CodebrewRouterChatClient(
                 continue;
             }
 
-            var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, options, cancellationToken);
+            var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, activeOptions, options, cancellationToken);
             if (providerMessages is null)
             {
                 providerFailures.Add($"{key}: context is too large for the provider.");
@@ -124,13 +129,13 @@ public sealed class CodebrewRouterChatClient(
 
         Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
 
-        var exhaustedMessage = BuildProviderUnavailableMessage(taskType, providers, providerFailures);
+        var exhaustedMessage = BuildProviderUnavailableMessage(activeOptions, taskType, providers, providerFailures);
         if (GatewayOptions.OfflineOnly)
         {
             throw new InvalidOperationException(exhaustedMessage);
         }
 
-        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, activeOptions, options, cancellationToken)
             ?? cleanedMessages;
         return await InnerClient.GetResponseAsync(innerMessages, options, cancellationToken);
     }
@@ -144,6 +149,7 @@ public sealed class CodebrewRouterChatClient(
     {
         var globalSw = System.Diagnostics.Stopwatch.StartNew();
         var messageList = chatMessages as IList<ChatMessage> ?? chatMessages.ToList();
+        var activeOptions = ResolveVirtualModelOptions(options);
 
         Log(new RouterStartEvent(messageList.Count));
 
@@ -156,7 +162,7 @@ public sealed class CodebrewRouterChatClient(
             cleanSw.ElapsedMilliseconds));
 
         var resolveSw = System.Diagnostics.Stopwatch.StartNew();
-        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, cancellationToken);
+        var (taskType, providers, tokenCount) = await ResolveAsync(cleanedMessages, activeOptions, cancellationToken);
         resolveSw.Stop();
         var chain = string.Join(", ", providers.Select(ModelName));
 
@@ -164,6 +170,7 @@ public sealed class CodebrewRouterChatClient(
             taskType.ToString(), tokenCount, providers.Length, chain, resolveSw.ElapsedMilliseconds));
 
         var providerFailures = new List<string>();
+        var emptyCompletionFailures = 0;
         for (var i = 0; i < providers.Length; i++)
         {
             var key = providers[i];
@@ -177,7 +184,7 @@ public sealed class CodebrewRouterChatClient(
                 continue;
             }
 
-            var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, options, cancellationToken);
+            var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, activeOptions, options, cancellationToken);
             if (providerMessages is null)
             {
                 providerFailures.Add($"{key}: context is too large for the provider.");
@@ -196,6 +203,11 @@ public sealed class CodebrewRouterChatClient(
             {
                 var reason = result.FailureReason ?? "First chunk probe failed";
                 Log(new RouterFailEvent(i + 1, key, model, reason), LogLevel.Warning);
+                if (result.IsEmptyCompletion)
+                {
+                    emptyCompletionFailures++;
+                }
+
                 providerFailures.Add($"{key}: {reason}");
                 continue;
             }
@@ -238,19 +250,43 @@ public sealed class CodebrewRouterChatClient(
 
         Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
 
-        var exhaustedMessage = BuildProviderUnavailableMessage(taskType, providers, providerFailures);
+        var exhaustedMessage = BuildProviderUnavailableMessage(activeOptions, taskType, providers, providerFailures);
         if (GatewayOptions.OfflineOnly)
         {
+            if (ShouldReturnEmptyVisibleResponse(providerFailures.Count, emptyCompletionFailures))
+            {
+                yield return CreateEmptyVisibleResponseUpdate();
+                Log(new RouterStreamCompleteEvent(
+                    1,
+                    "CodebrewRouter",
+                    activeOptions.ModelId,
+                    taskType.ToString(),
+                    globalSw.ElapsedMilliseconds));
+                yield break;
+            }
+
             throw new InvalidOperationException(exhaustedMessage);
         }
 
-        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, activeOptions, options, cancellationToken)
             ?? cleanedMessages;
         var innerResult = await TryGetFirstChunkAsync(InnerClient, innerMessages, options, cancellationToken);
         if (!innerResult.Success)
         {
-            Log(new RouterFailEvent(0, "LmStudio", "InnerClient", "InnerClient probe failed"), LogLevel.Error);
             var innerReason = innerResult.FailureReason ?? "InnerClient probe failed";
+            Log(new RouterFailEvent(0, "LmStudio", "InnerClient", innerReason), LogLevel.Error);
+            if (innerResult.IsEmptyCompletion)
+            {
+                yield return CreateEmptyVisibleResponseUpdate();
+                Log(new RouterStreamCompleteEvent(
+                    1,
+                    "CodebrewRouter",
+                    activeOptions.ModelId,
+                    taskType.ToString(),
+                    globalSw.ElapsedMilliseconds));
+                yield break;
+            }
+
             throw new InvalidOperationException(
                 $"{exhaustedMessage} InnerClient: {innerReason}");
         }
@@ -342,8 +378,19 @@ public sealed class CodebrewRouterChatClient(
         return copy;
     }
 
+    private CodebrewRouterOptions ResolveVirtualModelOptions(ChatOptions? requestOptions)
+    {
+        if (GatewayOptions.FindVirtualModel(requestOptions?.ModelId) is { } profile)
+        {
+            return profile.ToCodebrewRouterOptions();
+        }
+
+        return Options;
+    }
+
     private async Task<(TaskType TaskType, string[] Providers, int TokenCount)> ResolveAsync(
         IEnumerable<ChatMessage> messages,
+        CodebrewRouterOptions activeOptions,
         CancellationToken cancellationToken)
     {
         var tokenCount = tokenCounter.CountTokens(messages);
@@ -351,8 +398,8 @@ public sealed class CodebrewRouterChatClient(
 
         var typeKey = taskType.ToString();
         var providers =
-            Options.FallbackRules.TryGetValue(typeKey, out var chain) && chain.Length > 0 ? chain
-            : Options.FallbackRules.TryGetValue("General", out var general) ? general
+            activeOptions.FallbackRules.TryGetValue(typeKey, out var chain) && chain.Length > 0 ? chain
+            : activeOptions.FallbackRules.TryGetValue("General", out var general) ? general
             : [];
 
         var configuredProviders = providers.Where(IsProviderConfigured).ToArray();
@@ -364,6 +411,7 @@ public sealed class CodebrewRouterChatClient(
         int attempt,
         string providerKey,
         IList<ChatMessage> messages,
+        CodebrewRouterOptions activeOptions,
         ChatOptions? options,
         CancellationToken cancellationToken)
     {
@@ -383,7 +431,7 @@ public sealed class CodebrewRouterChatClient(
             return messages;
         }
 
-        var compactionRatio = Math.Clamp(Options.ContextCompaction.TargetBudgetRatio, 0.1d, 1.0d);
+        var compactionRatio = Math.Clamp(activeOptions.ContextCompaction.TargetBudgetRatio, 0.1d, 1.0d);
         var compactionTarget = Math.Max(1, (int)Math.Floor(inputBudget * compactionRatio));
         var compactionResult = await contextCompactor.CompactAsync(messages, compactionTarget, contextBudget.ModelId, cancellationToken);
         if (compactionResult.WasCompacted && compactionResult.CompactedTokenCount <= inputBudget)
@@ -462,7 +510,7 @@ public sealed class CodebrewRouterChatClient(
             if (!await enumerator.MoveNextAsync())
             {
                 await enumerator.DisposeAsync();
-                return FirstChunkResult.Failed("Provider completed without emitting a response chunk.");
+                return FirstChunkResult.EmptyCompletion();
             }
 
             return new FirstChunkResult(true, enumerator.Current, enumerator);
@@ -475,11 +523,12 @@ public sealed class CodebrewRouterChatClient(
     }
 
     private string BuildProviderUnavailableMessage(
+        CodebrewRouterOptions activeOptions,
         TaskType taskType,
         IReadOnlyCollection<string> providers,
         IReadOnlyCollection<string> providerFailures)
     {
-        var modelId = string.IsNullOrWhiteSpace(Options.ModelId) ? "codebrewRouter" : Options.ModelId;
+        var modelId = string.IsNullOrWhiteSpace(activeOptions.ModelId) ? "codebrewRouter" : activeOptions.ModelId;
         var providerChain = providers.Count == 0
             ? "no configured providers"
             : string.Join(", ", providers);
@@ -490,12 +539,25 @@ public sealed class CodebrewRouterChatClient(
         return $"Model '{modelId}' is currently unavailable: no backing provider succeeded for task {taskType}. {details}";
     }
 
+    private static bool ShouldReturnEmptyVisibleResponse(int providerFailureCount, int emptyCompletionFailures)
+        => emptyCompletionFailures > 0 && emptyCompletionFailures == providerFailureCount;
+
+    private static ChatResponseUpdate CreateEmptyVisibleResponseUpdate()
+        => new(ChatRole.Assistant, EmptyVisibleResponseMessage)
+        {
+            FinishReason = ChatFinishReason.Stop
+        };
+
     private sealed record FirstChunkResult(
         bool Success,
         ChatResponseUpdate FirstChunk,
         IAsyncEnumerator<ChatResponseUpdate>? Enumerator,
-        string? FailureReason = null)
+        string? FailureReason = null,
+        bool IsEmptyCompletion = false)
     {
+        public static FirstChunkResult EmptyCompletion()
+            => new(false, default!, null, EmptyProviderResponseReason, true);
+
         public static FirstChunkResult Failed(string reason) => new(false, default!, null, reason);
     }
 

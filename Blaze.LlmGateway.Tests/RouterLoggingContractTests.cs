@@ -203,6 +203,7 @@ public sealed class RouterLoggingContractTests
             request,
             new SingleChunkChatClient(),
             new FixedModelSelectionResolver(selectedClient),
+            Options.Create(new LlmGatewayOptions()),
             httpContext,
             CancellationToken.None);
 

@@ -66,6 +66,45 @@ public sealed class CodebrewRouterOfflineTests
     }
 
     [Fact]
+    public async Task Streaming_WhenOfflineLocalGemmaCompletesWithoutVisibleChunks_ReturnsRetryableAssistantMessage()
+    {
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<IChatClient>("LocalGemma", new EmptyStreamingChatClient());
+        var serviceProvider = services.BuildServiceProvider();
+
+        var client = new CodebrewRouterChatClient(
+            new ThrowingChatClient("No currently available backing provider is available for codebrewRouter."),
+            new FixedTaskClassifier(TaskType.General),
+            new NoopPromptCleaner(),
+            new NoopContextCompactor(),
+            new FixedTokenCounter(),
+            Options.Create(new CodebrewRouterOptions
+            {
+                ModelId = "codebrewRouter",
+                FallbackRules = new Dictionary<string, string[]>
+                {
+                    ["General"] = ["LocalGemma"]
+                }
+            }),
+            Options.Create(new LlmGatewayOptions
+            {
+                OfflineOnly = true,
+                CodebrewRouter = new CodebrewRouterOptions { ModelId = "codebrewRouter" }
+            }),
+            new AlwaysAvailableRegistry(),
+            serviceProvider,
+            NullLogger<CodebrewRouterChatClient>.Instance);
+
+        var chunks = new List<string>();
+        await foreach (var update in client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hello")]))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Contain("couldn't produce a visible response");
+    }
+
+    [Fact]
     public async Task AvailabilitySeed_WhenLocalGemmaModelPathMissing_DisablesCodebrewRouterWithSpecificReason()
     {
         var services = new ServiceCollection();
@@ -301,6 +340,33 @@ public sealed class CodebrewRouterOfflineTests
 #pragma warning disable CS0162
             yield break;
 #pragma warning restore CS0162
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class EmptyStreamingChatClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, string.Empty))
+            {
+                FinishReason = ChatFinishReason.Stop
+            });
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield break;
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;

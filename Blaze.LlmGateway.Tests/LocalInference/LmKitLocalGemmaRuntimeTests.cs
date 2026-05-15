@@ -1,5 +1,6 @@
 using Blaze.LlmGateway.LocalInference;
 using FluentAssertions;
+using LMKit.TextGeneration.Chat;
 using Microsoft.Extensions.AI;
 
 namespace Blaze.LlmGateway.Tests.LocalInference;
@@ -45,6 +46,46 @@ public sealed class LmKitLocalGemmaRuntimeTests
     }
 
     [Fact]
+    public async Task GetStreamingResponseAsync_StripsPlainEnglishThinkingPrelude_WhenFinalResponseMarkerAppears()
+    {
+        var messages = new[] { new ChatMessage(ChatRole.User, "explain options trading") };
+        var runtime = new FakeLmKitRuntime([
+            "Here's a thinking process to construct the explanation:",
+            "1. Analyze the request. 2. Draft the simple analogy.",
+            "\n\nFinal response:\n",
+            "Options are contracts that give you the right, not the obligation, to buy or sell a stock."
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Be(
+            "Options are contracts that give you the right, not the obligation, to buy or sell a stock.");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_SuppressesPlainEnglishThinkingPrelude_WhenNoFinalResponseAppears()
+    {
+        var messages = new[] { new ChatMessage(ChatRole.User, "help me with procrastination") };
+        var runtime = new FakeLmKitRuntime([
+            "Here's a thinking process to construct the response:",
+            "1. Analyze the Request: The user has a two-part request.",
+            "2. Determine the Tone and Style."
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetStreamingResponseAsync_EmitsAssistantChannelContent_WhenModelUsesAssistantChannel()
     {
         var messages = new[] { new ChatMessage(ChatRole.User, "write a helper method") };
@@ -76,6 +117,74 @@ public sealed class LmKitLocalGemmaRuntimeTests
         }
 
         string.Concat(chunks).Should().Be("This is the only text the model produced.");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_StripsEscapedTurnControlToken()
+    {
+        var messages = new[] { new ChatMessage(ChatRole.User, "hello") };
+        var runtime = new FakeLmKitRuntime([
+            "Hello! How can I help?",
+            "<turn|>"
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Be("Hello! How can I help?");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_StripsEscapedTurnControlToken_WhenSplitAcrossChunks()
+    {
+        var messages = new[] { new ChatMessage(ChatRole.User, "hello") };
+        var runtime = new FakeLmKitRuntime([
+            "Hello! How can I help?<tu",
+            "rn|>"
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Be("Hello! How can I help?");
+    }
+
+    [Fact]
+    public void BuildSeededHistoryEntries_WithMultiTurnChat_UsesPriorNonSystemMessagesOnly()
+    {
+        var messages = new[]
+        {
+            new ChatMessage(ChatRole.System, "be concise"),
+            new ChatMessage(ChatRole.User, "first user turn"),
+            new ChatMessage(ChatRole.Assistant, "first assistant answer"),
+            new ChatMessage(ChatRole.User, "current user turn")
+        };
+
+        var entries = LmKitLocalGemmaRuntime.BuildSeededHistoryEntries(messages);
+
+        entries.Should().Equal(
+            (AuthorRole.User, "first user turn"),
+            (AuthorRole.Assistant, "first assistant answer"));
+    }
+
+    [Fact]
+    public void BuildSeededHistoryEntries_WithOnlyCurrentPrompt_ReturnsEmptyEntries()
+    {
+        var messages = new[]
+        {
+            new ChatMessage(ChatRole.System, "be concise"),
+            new ChatMessage(ChatRole.User, "current user turn")
+        };
+
+        var entries = LmKitLocalGemmaRuntime.BuildSeededHistoryEntries(messages);
+
+        entries.Should().BeEmpty();
     }
 
     [Fact]

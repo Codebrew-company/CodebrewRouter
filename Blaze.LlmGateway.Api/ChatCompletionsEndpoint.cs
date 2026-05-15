@@ -2,10 +2,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.ClientModel;
 using System.Text.Json;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.Routing;
+using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Infrastructure;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 
@@ -24,6 +26,7 @@ public static class ChatCompletionsEndpoint
         ChatCompletionRequest req,
         IChatClient chatClient,
         IModelSelectionResolver modelSelectionResolver,
+        IOptions<LlmGatewayOptions> gatewayOptions,
         HttpContext httpContext,
         CancellationToken ct)
     {
@@ -65,30 +68,33 @@ public static class ChatCompletionsEndpoint
         var messages = new List<ChatMessage>();
         foreach (var msg in req.Messages)
         {
-            var role = msg.Role.ToLowerInvariant() switch
-            {
-                "system" => ChatRole.System,
-                "assistant" => ChatRole.Assistant,
-                _ => ChatRole.User
-            };
-            
-            var chatMsg = new ChatMessage(role, msg.Content);
+            var chatMsg = ToChatMessage(msg);
+            var content = msg.Content ?? string.Empty;
             messages.Add(chatMsg);
             logger?.LogDebug("  ├─ Message added: {Role} - {ContentPreview}", 
-                role, msg.Content.Substring(0, Math.Min(50, msg.Content.Length)));
+                chatMsg.Role, content.Substring(0, Math.Min(50, content.Length)));
         }
+
+        var virtualModel = gatewayOptions.Value.FindVirtualModel(req.Model);
+        messages = ApplyVirtualModelSystemPrompt(messages, virtualModel);
 
         // Build ChatOptions from request
         var options = new ChatOptions
         {
+            ModelId = req.Model,
             Temperature = req.Temperature,
-            MaxOutputTokens = req.MaxTokens,
+            MaxOutputTokens = req.MaxCompletionTokens ?? req.MaxTokens,
             TopP = req.TopP,
             FrequencyPenalty = req.FrequencyPenalty,
-            PresencePenalty = req.PresencePenalty
+            PresencePenalty = req.PresencePenalty,
+            StopSequences = ExtractStopSequences(req.Stop),
+            ToolMode = ResolveToolMode(req.ToolChoice, req.Tools),
+            AllowMultipleToolCalls = req.ParallelToolCalls,
+            ResponseFormat = ResolveResponseFormat(req.ResponseFormat),
+            Reasoning = ResolveReasoning(req.ReasoningEffort)
         };
         logger?.LogDebug("  ├─ ChatOptions: Temp={Temperature}, MaxTokens={MaxTokens}, TopP={TopP}", 
-            req.Temperature, req.MaxTokens, req.TopP);
+            req.Temperature, options.MaxOutputTokens, req.TopP);
 
         if (req.Stream)
         {
@@ -277,16 +283,30 @@ public static class ChatCompletionsEndpoint
 
             var id = $"chatcmpl-{Guid.NewGuid().ToString("N").Substring(0, 24)}";
             var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var responseText = completion.Messages?.FirstOrDefault()?.Text ?? "";
+            var responseMessage = completion.Messages?.FirstOrDefault() is { } message
+                ? ToOpenAiMessage(message)
+                : new ChatMessageDto(Role: "assistant", Content: "");
+            var finishReason = responseMessage.ToolCalls is { Count: > 0 }
+                ? "tool_calls"
+                : TranslateFinishReason(completion.FinishReason);
             var choices = new List<Choice>
             {
                 new(
                     Index: 0,
-                    Message: new ChatMessageDto(Role: "assistant", Content: responseText),
+                    Message: responseMessage,
                     Delta: null,
-                    FinishReason: "stop"
+                    FinishReason: finishReason
                 )
             };
+
+            var usage = completion.Usage is null
+                ? null
+                : new Usage(
+                    PromptTokens: ToTokenCount(completion.Usage.InputTokenCount),
+                    CompletionTokens: ToTokenCount(completion.Usage.OutputTokenCount),
+                    TotalTokens: ToTokenCount(
+                        completion.Usage.TotalTokenCount ??
+                        (completion.Usage.InputTokenCount.GetValueOrDefault() + completion.Usage.OutputTokenCount.GetValueOrDefault())));
 
             var result = new ChatCompletionResponse(
                 Id: id,
@@ -294,10 +314,10 @@ public static class ChatCompletionsEndpoint
                 Created: created,
                 Model: model,
                 Choices: choices,
-                Usage: null
+                Usage: usage
             );
 
-            logger?.LogDebug("  └─ Response text length: {TextLength}", responseText.Length);
+            logger?.LogDebug("  └─ Response text length: {TextLength}", responseMessage.Content.Length);
             return Results.Json(result);
         }
         catch (Exception ex)
@@ -347,6 +367,299 @@ public static class ChatCompletionsEndpoint
         await httpContext.Response.WriteAsync($"data: {contentJson}\n\n", cancellationToken);
         await httpContext.Response.Body.FlushAsync(cancellationToken);
     }
+
+    private static ChatRole ResolveChatRole(string? role)
+        => role?.ToLowerInvariant() switch
+        {
+            "developer" => ChatRole.System,
+            "system" => ChatRole.System,
+            "assistant" => ChatRole.Assistant,
+            "tool" => ChatRole.Tool,
+            "function" => ChatRole.Tool,
+            _ => ChatRole.User
+        };
+
+    private static ChatMessage ToChatMessage(ChatMessageDto message)
+    {
+        var role = ResolveChatRole(message.Role);
+        var content = message.Content ?? string.Empty;
+
+        if (message.ToolCalls is not { Count: > 0 } && string.IsNullOrWhiteSpace(message.ToolCallId))
+        {
+            return new ChatMessage(role, content)
+            {
+                AuthorName = message.Name
+            };
+        }
+
+        var contents = new List<AIContent>();
+        if (!string.IsNullOrEmpty(content) && role != ChatRole.Tool)
+        {
+            contents.Add(new TextContent(content));
+        }
+
+        if (message.ToolCalls is not null)
+        {
+            foreach (var toolCall in message.ToolCalls)
+            {
+                if (toolCall.Function is null)
+                {
+                    continue;
+                }
+
+                contents.Add(new FunctionCallContent(
+                    toolCall.Id,
+                    toolCall.Function.Name,
+                    ParseToolArguments(toolCall.Function.Arguments)));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.ToolCallId))
+        {
+            contents.Add(new FunctionResultContent(message.ToolCallId, content));
+        }
+
+        return new ChatMessage(role, contents)
+        {
+            AuthorName = message.Name
+        };
+    }
+
+    private static List<ChatMessage> ApplyVirtualModelSystemPrompt(
+        List<ChatMessage> messages,
+        VirtualModelOptions? profile)
+    {
+        if (profile is null || string.IsNullOrWhiteSpace(profile.SystemPrompt))
+        {
+            return messages;
+        }
+
+        return
+        [
+            new ChatMessage(ChatRole.System, profile.SystemPrompt),
+            .. messages
+        ];
+    }
+
+    private static ChatMessageDto ToOpenAiMessage(ChatMessage message)
+    {
+        var toolCalls = message.Contents
+            .OfType<FunctionCallContent>()
+            .Select((toolCall, index) => new ToolCallDto(
+                Id: string.IsNullOrWhiteSpace(toolCall.CallId) ? $"call_{index}" : toolCall.CallId,
+                Type: "function",
+                Function: new ToolCallFunctionDto(
+                    Name: toolCall.Name,
+                    Arguments: JsonSerializer.Serialize(toolCall.Arguments)),
+                Index: null))
+            .ToList();
+
+        var toolResult = message.Contents.OfType<FunctionResultContent>().FirstOrDefault();
+
+        return new ChatMessageDto(
+            Role: ResolveOpenAiRole(message.Role),
+            Content: message.Text ?? string.Empty,
+            Name: message.AuthorName,
+            ToolCallId: toolResult?.CallId,
+            ToolCalls: toolCalls.Count == 0 ? null : toolCalls);
+    }
+
+    private static string ResolveOpenAiRole(ChatRole role)
+    {
+        if (role == ChatRole.System)
+        {
+            return "system";
+        }
+
+        if (role == ChatRole.Assistant)
+        {
+            return "assistant";
+        }
+
+        return role == ChatRole.Tool ? "tool" : "user";
+    }
+
+    private static IDictionary<string, object?> ParseToolArguments(string? arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return new Dictionary<string, object?>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(arguments);
+            return parsed?.ToDictionary(
+                    static pair => pair.Key,
+                    static pair => (object?)pair.Value.Clone())
+                ?? new Dictionary<string, object?>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, object?>
+            {
+                ["arguments"] = arguments
+            };
+        }
+    }
+
+    private static IList<string>? ExtractStopSequences(JsonElement? stop)
+    {
+        if (stop is not { } value ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var stopText = value.GetString();
+            return string.IsNullOrEmpty(stopText) ? null : [stopText];
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var sequences = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(item.GetString()))
+            {
+                sequences.Add(item.GetString()!);
+            }
+        }
+
+        return sequences.Count == 0 ? null : sequences;
+    }
+
+    private static ChatToolMode? ResolveToolMode(JsonElement? toolChoice, IList<Tool>? tools)
+    {
+        if (toolChoice is not { } value ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return tools is { Count: > 0 } ? ChatToolMode.Auto : null;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString()?.ToLowerInvariant() switch
+            {
+                "none" => ChatToolMode.None,
+                "auto" => ChatToolMode.Auto,
+                "required" => ChatToolMode.RequireAny,
+                _ => null
+            };
+        }
+
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (value.TryGetProperty("function", out var function) &&
+            function.ValueKind == JsonValueKind.Object &&
+            function.TryGetProperty("name", out var name) &&
+            name.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(name.GetString()))
+        {
+            return ChatToolMode.RequireSpecific(name.GetString()!);
+        }
+
+        if (value.TryGetProperty("type", out var type) &&
+            string.Equals(type.GetString(), "allowed_tools", StringComparison.OrdinalIgnoreCase))
+        {
+            return ChatToolMode.RequireAny;
+        }
+
+        return null;
+    }
+
+    private static ChatResponseFormat? ResolveResponseFormat(JsonElement? responseFormat)
+    {
+        if (responseFormat is not { } value ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Object ||
+            !value.TryGetProperty("type", out var type) ||
+            type.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return type.GetString()?.ToLowerInvariant() switch
+        {
+            "json_object" => ChatResponseFormat.Json,
+            "json_schema" => ChatResponseFormat.Json,
+            "text" => ChatResponseFormat.Text,
+            _ => null
+        };
+    }
+
+    private static ReasoningOptions? ResolveReasoning(string? reasoningEffort)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningEffort))
+        {
+            return null;
+        }
+
+        var effort = reasoningEffort.Trim().ToLowerInvariant() switch
+        {
+            "none" => ReasoningEffort.None,
+            "minimal" => ReasoningEffort.Low,
+            "low" => ReasoningEffort.Low,
+            "medium" => ReasoningEffort.Medium,
+            "high" => ReasoningEffort.High,
+            "xhigh" => ReasoningEffort.ExtraHigh,
+            "extra_high" => ReasoningEffort.ExtraHigh,
+            "extra-high" => ReasoningEffort.ExtraHigh,
+            _ => (ReasoningEffort?)null
+        };
+
+        return effort is null ? null : new ReasoningOptions { Effort = effort.Value };
+    }
+
+    private static string TranslateFinishReason(ChatFinishReason? finishReason)
+    {
+        if (finishReason is null)
+        {
+            return "stop";
+        }
+
+        if (finishReason == ChatFinishReason.Stop)
+        {
+            return "stop";
+        }
+
+        if (finishReason == ChatFinishReason.Length)
+        {
+            return "length";
+        }
+
+        if (finishReason == ChatFinishReason.ContentFilter)
+        {
+            return "content_filter";
+        }
+
+        if (finishReason == ChatFinishReason.ToolCalls)
+        {
+            return "tool_calls";
+        }
+
+        return finishReason.Value.Value;
+    }
+
+    private static int ToTokenCount(long? tokenCount)
+        => tokenCount is null
+            ? 0
+            : tokenCount > int.MaxValue
+                ? int.MaxValue
+                : (int)tokenCount.Value;
 
     private static IResult CreateProviderErrorResult(string model, Exception? exception)
     {
@@ -467,8 +780,8 @@ public static class ChatCompletionsEndpoint
     }
 
     /// <summary>
-    /// Translates Tool objects from OpenAI wire format to MEAI AITool declarations.
-    /// For Phase 1, we accept and log tool definitions; full execution handling is Phase 2.
+    /// Translates Tool objects from OpenAI wire format to declaration-only MEAI AITools.
+    /// Client-supplied tools must round-trip as tool calls instead of being invoked by the gateway.
     /// </summary>
     private static IList<AITool>? TranslateTools(IList<Tool>? tools, ILogger? logger)
     {
@@ -481,13 +794,16 @@ public static class ChatCompletionsEndpoint
         {
             try
             {
-                // Create a simple AIFunction that represents the tool schema
-                // In Phase 2, actual implementation will invoke external tool handlers
-                var aiFunction = AIFunctionFactory.Create(
-                    new Func<string>(() => throw new NotImplementedException($"Tool '{tool.Function.Name}' execution not yet implemented"))
-                );
-                
-                aiTools.Add(aiFunction);
+                if (!string.Equals(tool.Type, "function", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(tool.Function.Name))
+                {
+                    continue;
+                }
+
+                aiTools.Add(new OpenAiFunctionToolDeclaration(
+                    tool.Function.Name,
+                    tool.Function.Description,
+                    ToJsonElement(tool.Function.Parameters)));
                 logger?.LogDebug("  ├─ Tool translated: {ToolName}", tool.Function.Name);
             }
             catch (Exception ex)
@@ -497,5 +813,32 @@ public static class ChatCompletionsEndpoint
         }
 
         return aiTools.Count > 0 ? aiTools : null;
+    }
+
+    private static JsonElement ToJsonElement(object? value)
+    {
+        if (value is JsonElement element &&
+            element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+        {
+            return element.Clone();
+        }
+
+        return value is null
+            ? JsonSerializer.SerializeToElement(new { type = "object", properties = new Dictionary<string, object>() })
+            : JsonSerializer.SerializeToElement(value);
+    }
+
+    private sealed class OpenAiFunctionToolDeclaration(
+        string name,
+        string? description,
+        JsonElement jsonSchema) : AIFunctionDeclaration
+    {
+        public override string Name { get; } = name;
+
+        public override string Description { get; } = description ?? string.Empty;
+
+        public override JsonElement JsonSchema { get; } = jsonSchema.Clone();
+
+        public override JsonElement? ReturnJsonSchema => null;
     }
 }
