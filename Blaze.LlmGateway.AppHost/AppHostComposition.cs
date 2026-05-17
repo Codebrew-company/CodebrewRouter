@@ -128,6 +128,7 @@ public static class AppHostComposition
         }
 
         var enableAgentDevUi = builder.Configuration.GetValue("DevUI:AgentFramework", defaultValue: false);
+        var agentDevUiModel = builder.Configuration.GetValue("DevUI:AgentModel", defaultValue: "codebrewSharpClient");
 
         if (enableAgentDevUi)
         {
@@ -148,7 +149,7 @@ public static class AppHostComposition
                         ReferenceExpression.Create($"{apiEndpoint}/v1");
                 })
                 .WithEnvironment("OPENAI_API_KEY", "sk-blaze-devui")
-                .WithEnvironment("BLAZE_GATEWAY_MODEL", "codebrewRouter")
+                .WithEnvironment("BLAZE_GATEWAY_MODEL", agentDevUiModel)
                 .WaitFor(api);
         }
         else

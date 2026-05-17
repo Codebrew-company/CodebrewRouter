@@ -28,6 +28,7 @@ public static class ModelsEndpoint
                 Provider: model.Provider,
                 OwnedBy: model.OwnedBy,
                 Source: model.Source,
+                Extends: options.Value.FindVirtualModel(model.Id)?.Extends,
                 Enabled: model.Enabled,
                 ErrorMessage: model.ErrorMessage))
             .ToList();
@@ -112,6 +113,7 @@ public static class ModelsEndpoint
             Provider: virtualModel.Provider,
             OwnedBy: virtualModel.OwnedBy,
             Source: virtualModel.Source,
+            Extends: virtualModel.Extends,
             Enabled: availability?.Enabled ?? false,
             ErrorMessage: availability?.ErrorMessage,
             BackingModels: backingModels,

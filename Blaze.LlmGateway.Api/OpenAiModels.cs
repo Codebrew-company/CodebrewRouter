@@ -232,6 +232,7 @@ public record ModelInfo(
     string Provider,
     string? OwnedBy = null,
     string? Source = null,
+    string? Extends = null,
     bool Enabled = true,
     string? ErrorMessage = null);
 
@@ -267,6 +268,7 @@ public record CodebrewRouterModelsResponse(
     string Provider,
     string OwnedBy,
     string Source,
+    string? Extends,
     bool Enabled,
     string? ErrorMessage,
     IList<CodebrewRouterBackingModel> BackingModels,

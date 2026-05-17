@@ -11,8 +11,9 @@ The agent talks to the OpenAI-compatible endpoint exposed by the gateway
                                            the gateway does not enforce auth yet)
 
 The `model` value is not the upstream model name — the gateway's router
-picks the real provider based on message content. Pass ``"codebrewRouter"``
-(the virtual router model) or any known destination name.
+picks the real provider based on message content. The AppHost defaults this
+agent to ``"codebrewSharpClient"``, a C#/.NET virtual model that extends
+``"codebrewRouter"``.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from agent_framework.openai import OpenAIChatClient
 
 _base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:5000/v1")
 _api_key = os.environ.get("OPENAI_API_KEY", "sk-blaze-devui")
-_model = os.environ.get("BLAZE_GATEWAY_MODEL", "codebrewRouter")
+_model = os.environ.get("BLAZE_GATEWAY_MODEL", "codebrewSharpClient")
 
 agent = ChatAgent(
     name="BlazeGateway",

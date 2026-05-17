@@ -20,6 +20,9 @@ public class VirtualModelOptions
     /// <summary>Source label exposed in model discovery.</summary>
     public string Source { get; set; } = "virtual";
 
+    /// <summary>Optional virtual model ID that this profile inherits router behavior from.</summary>
+    public string? Extends { get; set; }
+
     /// <summary>Optional system prompt prepended to every request for this virtual model.</summary>
     public string? SystemPrompt { get; set; }
 
@@ -27,7 +30,7 @@ public class VirtualModelOptions
     public Dictionary<string, string[]> FallbackRules { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Context compaction behavior for this virtual model.</summary>
-    public ContextCompactionOptions ContextCompaction { get; set; } = new();
+    public ContextCompactionOptions? ContextCompaction { get; set; }
 }
 
 public static class VirtualModelOptionsExtensions
@@ -74,6 +77,7 @@ public static class VirtualModelOptionsExtensions
             Provider = "CodebrewRouter",
             OwnedBy = "codebrew",
             Source = "virtual",
+            Extends = null,
             FallbackRules = CloneFallbackRules(options.FallbackRules),
             ContextCompaction = options.ContextCompaction
         };
@@ -84,7 +88,7 @@ public static class VirtualModelOptionsExtensions
             Enabled = profile.Enabled,
             ModelId = profile.ModelId,
             FallbackRules = CloneFallbackRules(profile.FallbackRules),
-            ContextCompaction = profile.ContextCompaction
+            ContextCompaction = profile.ContextCompaction ?? new ContextCompactionOptions()
         };
 
     private static VirtualModelOptions ToEffectiveVirtualModelOptions(
@@ -98,12 +102,25 @@ public static class VirtualModelOptionsExtensions
             Provider = string.IsNullOrWhiteSpace(profile.Provider) ? "CodebrewRouter" : profile.Provider,
             OwnedBy = string.IsNullOrWhiteSpace(profile.OwnedBy) ? "codebrew" : profile.OwnedBy,
             Source = string.IsNullOrWhiteSpace(profile.Source) ? "virtual" : profile.Source,
+            Extends = NormalizeExtends(profile.Extends, defaults),
             SystemPrompt = profile.SystemPrompt,
             FallbackRules = profile.FallbackRules.Count > 0
                 ? CloneFallbackRules(profile.FallbackRules)
                 : CloneFallbackRules(defaults.FallbackRules),
-            ContextCompaction = profile.ContextCompaction
+            ContextCompaction = profile.ContextCompaction ?? defaults.ContextCompaction
         };
+
+    private static string? NormalizeExtends(string? extends, CodebrewRouterOptions defaults)
+    {
+        if (string.IsNullOrWhiteSpace(extends))
+        {
+            return null;
+        }
+
+        return string.Equals(extends, defaults.ModelId, StringComparison.OrdinalIgnoreCase)
+            ? defaults.ModelId
+            : extends;
+    }
 
     private static Dictionary<string, string[]> CloneFallbackRules(IDictionary<string, string[]> rules)
         => rules.ToDictionary(

@@ -344,6 +344,24 @@ public class ModelsIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Models_ContainsCodebrewSharpClientVirtualModel()
+    {
+        var response = await _client!.GetAsync("/v1/models");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var codebrewSharpClient = json.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Single(model => string.Equals(model.GetProperty("id").GetString(), "codebrewSharpClient", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("model", codebrewSharpClient.GetProperty("object").GetString());
+        Assert.Equal("CodebrewRouter", codebrewSharpClient.GetProperty("provider").GetString());
+        Assert.Equal("codebrew", codebrewSharpClient.GetProperty("ownedBy").GetString());
+        Assert.Equal("virtual", codebrewSharpClient.GetProperty("source").GetString());
+        Assert.Equal("codebrewRouter", codebrewSharpClient.GetProperty("extends").GetString());
+    }
+
+    [Fact]
     public async Task CodebrewRouterModelDetails_ReturnsVirtualModelMetadata()
     {
         var response = await _client!.GetAsync("/v1/models/codebrewRouter");
@@ -414,6 +432,30 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("yardly", json.RootElement.GetProperty("id").GetString());
         Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
         Assert.Equal("yardly", json.RootElement.GetProperty("ownedBy").GetString());
+
+        var generalRule = json.RootElement.GetProperty("fallbackRules")
+            .EnumerateArray()
+            .Single(rule => string.Equals(rule.GetProperty("taskType").GetString(), "General", StringComparison.OrdinalIgnoreCase));
+        var providers = generalRule.GetProperty("providers")
+            .EnumerateArray()
+            .Select(provider => provider.GetString() ?? "")
+            .ToArray();
+
+        Assert.Equal(new[] { "LocalGemma" }, providers);
+    }
+
+    [Fact]
+    public async Task CodebrewSharpClientModelDetails_ReturnsCodebrewRouterInheritanceAndFallbackRules()
+    {
+        var response = await _client!.GetAsync("/v1/models/codebrewSharpClient");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("codebrewSharpClient", json.RootElement.GetProperty("id").GetString());
+        Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
+        Assert.Equal("codebrew", json.RootElement.GetProperty("ownedBy").GetString());
+        Assert.Equal("codebrewRouter", json.RootElement.GetProperty("extends").GetString());
 
         var generalRule = json.RootElement.GetProperty("fallbackRules")
             .EnumerateArray()

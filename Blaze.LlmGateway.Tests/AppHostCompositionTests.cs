@@ -43,6 +43,20 @@ public class AppHostCompositionTests
     }
 
     [Fact]
+    public void AgentDevUi_DefaultsToCodebrewSharpClientVirtualModel()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "AppHostComposition.cs"));
+        var appHostConfig = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "appsettings.json"));
+        var agentSource = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "devui-agents", "gateway_agent", "agent.py"));
+
+        Assert.Contains("DevUI:AgentModel", source);
+        Assert.Contains("\"BLAZE_GATEWAY_MODEL\", agentDevUiModel", source);
+        Assert.Contains("\"AgentModel\": \"codebrewSharpClient\"", appHostConfig);
+        Assert.Contains("os.environ.get(\"BLAZE_GATEWAY_MODEL\", \"codebrewSharpClient\")", agentSource);
+    }
+
+    [Fact]
     public void ServiceDefaults_ReadinessEndpointTreatsDegradedAsNotReady()
     {
         var root = FindRepositoryRoot();
