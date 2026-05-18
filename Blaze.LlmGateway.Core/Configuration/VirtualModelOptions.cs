@@ -26,6 +26,9 @@ public class VirtualModelOptions
     /// <summary>Optional system prompt prepended to every request for this virtual model.</summary>
     public string? SystemPrompt { get; set; }
 
+    /// <summary>Response contract used by protocol adapters to shape model output.</summary>
+    public string ResponseContract { get; set; } = VirtualModelResponseContracts.NaturalLanguage;
+
     /// <summary>Agent runtime mode used to expose this model internally.</summary>
     public string AgentMode { get; set; } = "chat-client-agent";
 
@@ -119,6 +122,7 @@ public static class VirtualModelOptionsExtensions
             OwnedBy = "codebrew",
             Source = "virtual",
             Extends = null,
+            ResponseContract = VirtualModelResponseContracts.NaturalLanguage,
             AgentMode = "chat-client-agent",
             Workflow = "single",
             Capabilities = ["chat", "routing", "tools"],
@@ -155,6 +159,9 @@ public static class VirtualModelOptionsExtensions
             Source = string.IsNullOrWhiteSpace(profile.Source) ? "virtual" : profile.Source,
             Extends = NormalizeExtends(profile.Extends, defaults),
             SystemPrompt = profile.SystemPrompt,
+            ResponseContract = string.IsNullOrWhiteSpace(profile.ResponseContract)
+                ? VirtualModelResponseContracts.NaturalLanguage
+                : profile.ResponseContract,
             AgentMode = string.IsNullOrWhiteSpace(profile.AgentMode) ? "chat-client-agent" : profile.AgentMode,
             Workflow = string.IsNullOrWhiteSpace(profile.Workflow) ? "single" : profile.Workflow,
             Capabilities = profile.Capabilities.Length > 0 ? profile.Capabilities.ToArray() : ["chat"],
@@ -199,4 +206,13 @@ public static class VirtualModelOptionsExtensions
                 Provider = options.Provider,
                 Collections = options.Collections.ToArray()
             };
+}
+
+public static class VirtualModelResponseContracts
+{
+    public const string NaturalLanguage = "natural-language";
+    public const string YardlyJson = "yardly-json";
+
+    public static bool RequiresYardlyJson(VirtualModelOptions? profile)
+        => string.Equals(profile?.ResponseContract, YardlyJson, StringComparison.OrdinalIgnoreCase);
 }

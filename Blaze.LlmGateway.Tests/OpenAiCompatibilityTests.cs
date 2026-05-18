@@ -187,7 +187,8 @@ public sealed class OpenAiCompatibilityTests
             CancellationToken.None);
 
         chatClient.Messages.Select(message => message.Role)
-            .Should().Equal(ChatRole.System, ChatRole.User, ChatRole.Assistant, ChatRole.Tool);
+            .Should().Equal(ChatRole.System, ChatRole.System, ChatRole.User, ChatRole.Assistant, ChatRole.Tool);
+        chatClient.Messages[0].Text.Should().Contain("normal conversational Markdown");
         chatClient.Options.Should().NotBeNull();
         chatClient.Options!.MaxOutputTokens.Should().Be(128);
         chatClient.Options.StopSequences.Should().Equal("END", "DONE");
@@ -287,9 +288,9 @@ public sealed class OpenAiCompatibilityTests
         var request = JsonSerializer.Deserialize<ChatCompletionRequest>(
             """
             {
-              "model": "yardly",
+              "model": "codebrewSharpClient",
               "messages": [
-                { "role": "user", "content": "What is wrong with this tomato leaf?" }
+                { "role": "user", "content": "How should I structure this MAUI service?" }
               ]
             }
             """,
@@ -304,10 +305,10 @@ public sealed class OpenAiCompatibilityTests
         {
             VirtualModels =
             {
-                ["yardly"] = new VirtualModelOptions
+                ["codebrewSharpClient"] = new VirtualModelOptions
                 {
-                    ModelId = "yardly",
-                    SystemPrompt = "You are Yardly, a plant identification and care assistant.",
+                    ModelId = "codebrewSharpClient",
+                    SystemPrompt = "You are a focused C# assistant.",
                     FallbackRules =
                     {
                         ["General"] = ["LocalGemma"]
@@ -324,12 +325,155 @@ public sealed class OpenAiCompatibilityTests
             httpContext,
             CancellationToken.None);
 
-        chatClient.Messages.Should().HaveCount(2);
+        chatClient.Messages.Should().HaveCount(3);
         chatClient.Messages[0].Role.Should().Be(ChatRole.System);
-        chatClient.Messages[0].Text.Should().Be("You are Yardly, a plant identification and care assistant.");
-        chatClient.Messages[1].Role.Should().Be(ChatRole.User);
+        chatClient.Messages[0].Text.Should().Be("You are a focused C# assistant.");
+        chatClient.Messages[1].Role.Should().Be(ChatRole.System);
+        chatClient.Messages[1].Text.Should().Contain("normal conversational Markdown");
+        chatClient.Messages[2].Role.Should().Be(ChatRole.User);
         chatClient.Options.Should().NotBeNull();
-        chatClient.Options!.ModelId.Should().Be("yardly");
+        chatClient.Options!.ModelId.Should().Be("codebrewSharpClient");
+        chatClient.Options.ResponseFormat.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HandleAsync_ForYardlyForcesJsonContractAndNormalizesPlainTextResponse()
+    {
+        var request = JsonSerializer.Deserialize<ChatCompletionRequest>(
+            """
+            {
+              "model": "yardly",
+              "messages": [
+                { "role": "user", "content": "What is wrong with this tomato leaf?" }
+              ]
+            }
+            """,
+            OpenAiJsonOptions)!;
+
+        var chatClient = new CapturingChatClient(
+            new ChatResponse(new ChatMessage(ChatRole.Assistant, "The tomato leaf may be stressed by inconsistent watering."))
+            {
+                FinishReason = ChatFinishReason.Stop
+            });
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IModelAvailabilityRegistry>(new AlwaysAvailableRegistry())
+            .BuildServiceProvider();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            Response = { Body = new MemoryStream() }
+        };
+        var options = Options.Create(new LlmGatewayOptions
+        {
+            VirtualModels =
+            {
+                ["yardly"] = new VirtualModelOptions
+                {
+                    ModelId = "yardly",
+                    ResponseContract = VirtualModelResponseContracts.YardlyJson,
+                    SystemPrompt = "You are Yardly, a plant identification and care assistant.",
+                    FallbackRules =
+                    {
+                        ["General"] = ["LocalGemma"]
+                    }
+                }
+            }
+        });
+
+        var result = await ChatCompletionsEndpoint.HandleAsync(
+            request,
+            chatClient,
+            new FixedModelSelectionResolver(null),
+            options,
+            httpContext,
+            CancellationToken.None);
+
+        chatClient.Options.Should().NotBeNull();
+        chatClient.Options!.ResponseFormat.Should().Be(ChatResponseFormat.Json);
+        chatClient.Messages.Select(message => message.Text ?? string.Empty)
+            .Should().Contain(text => text.Contains("yardly.response.v1", StringComparison.Ordinal));
+
+        await result.ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        var content = json.RootElement.GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+
+        content.Should().NotBeNullOrWhiteSpace();
+        using var yardlyJson = JsonDocument.Parse(content!);
+        yardlyJson.RootElement.GetProperty("schemaVersion").GetString().Should().Be("yardly.response.v1");
+        yardlyJson.RootElement.GetProperty("summary").GetString()
+            .Should().Contain("tomato leaf");
+    }
+
+    [Fact]
+    public async Task HandleAsync_ForPlannerKeepsNaturalLanguageResponse()
+    {
+        var request = JsonSerializer.Deserialize<ChatCompletionRequest>(
+            """
+            {
+              "model": "codebrewPlanner",
+              "messages": [
+                { "role": "user", "content": "Make a plan for the router output contract." }
+              ]
+            }
+            """,
+            OpenAiJsonOptions)!;
+
+        var chatClient = new CapturingChatClient(
+            new ChatResponse(new ChatMessage(ChatRole.Assistant, "Plan:\n1. Keep dev tools conversational.\n2. Make Yardly JSON."))
+            {
+                FinishReason = ChatFinishReason.Stop
+            });
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IModelAvailabilityRegistry>(new AlwaysAvailableRegistry())
+            .BuildServiceProvider();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            Response = { Body = new MemoryStream() }
+        };
+        var options = Options.Create(new LlmGatewayOptions
+        {
+            VirtualModels =
+            {
+                ["codebrewPlanner"] = new VirtualModelOptions
+                {
+                    ModelId = "codebrewPlanner",
+                    ResponseContract = VirtualModelResponseContracts.NaturalLanguage,
+                    SystemPrompt = "You are CodebrewPlanner.",
+                    FallbackRules =
+                    {
+                        ["General"] = ["LocalGemma"]
+                    }
+                }
+            }
+        });
+
+        var result = await ChatCompletionsEndpoint.HandleAsync(
+            request,
+            chatClient,
+            new FixedModelSelectionResolver(null),
+            options,
+            httpContext,
+            CancellationToken.None);
+
+        chatClient.Options.Should().NotBeNull();
+        chatClient.Options!.ResponseFormat.Should().BeNull();
+
+        await result.ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        var content = json.RootElement.GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+
+        content.Should().Be("Plan:\n1. Keep dev tools conversational.\n2. Make Yardly JSON.");
     }
 
     private static T? GetPropertyValue<T>(object instance, string propertyName)

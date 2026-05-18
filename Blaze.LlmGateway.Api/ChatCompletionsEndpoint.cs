@@ -75,8 +75,7 @@ public static class ChatCompletionsEndpoint
                 chatMsg.Role, content.Substring(0, Math.Min(50, content.Length)));
         }
 
-        var virtualModel = gatewayOptions.Value.FindVirtualModel(req.Model);
-        messages = ApplyVirtualModelSystemPrompt(messages, virtualModel);
+        messages = OpenAiProtocolMapper.ApplyInstructions(messages, null, req.Model, gatewayOptions);
 
         // Build ChatOptions from request
         var options = new ChatOptions
@@ -90,7 +89,10 @@ public static class ChatCompletionsEndpoint
             StopSequences = ExtractStopSequences(req.Stop),
             ToolMode = ResolveToolMode(req.ToolChoice, req.Tools),
             AllowMultipleToolCalls = req.ParallelToolCalls,
-            ResponseFormat = ResolveResponseFormat(req.ResponseFormat),
+            ResponseFormat = OpenAiProtocolMapper.GetResponseFormatForModel(
+                req.Model,
+                gatewayOptions,
+                ResolveResponseFormat(req.ResponseFormat)),
             Reasoning = ResolveReasoning(req.ReasoningEffort)
         };
         logger?.LogDebug("  ├─ ChatOptions: Temp={Temperature}, MaxTokens={MaxTokens}, TopP={TopP}", 
@@ -99,12 +101,12 @@ public static class ChatCompletionsEndpoint
         if (req.Stream)
         {
             // Streaming response via SSE
-            return await HandleStreamingAsync(httpContext, messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, logger, ct);
+            return await HandleStreamingAsync(httpContext, messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, gatewayOptions, logger, ct);
         }
         else
         {
             // Non-streaming response
-            return await HandleNonStreamingAsync(messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, logger, ct);
+            return await HandleNonStreamingAsync(messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, gatewayOptions, logger, ct);
         }
     }
 
@@ -117,6 +119,7 @@ public static class ChatCompletionsEndpoint
         IChatClient chatClient,
         IModelSelectionResolver modelSelectionResolver,
         IModelAvailabilityRegistry availabilityRegistry,
+        IOptions<LlmGatewayOptions> gatewayOptions,
         ILogger<ChatCompletionRequest>? logger,
         CancellationToken ct)
     {
@@ -248,6 +251,7 @@ public static class ChatCompletionsEndpoint
         IChatClient chatClient,
         IModelSelectionResolver modelSelectionResolver,
         IModelAvailabilityRegistry availabilityRegistry,
+        IOptions<LlmGatewayOptions> gatewayOptions,
         ILogger<ChatCompletionRequest>? logger,
         CancellationToken ct)
     {
@@ -287,6 +291,16 @@ public static class ChatCompletionsEndpoint
             var responseMessage = completion.Messages?.FirstOrDefault() is { } message
                 ? ToOpenAiMessage(message)
                 : new ChatMessageDto(Role: "assistant", Content: "");
+            if (responseMessage.ToolCalls is not { Count: > 0 })
+            {
+                responseMessage = responseMessage with
+                {
+                    Content = OpenAiProtocolMapper.NormalizeAssistantContent(
+                        model,
+                        responseMessage.Content,
+                        gatewayOptions)
+                };
+            }
             var finishReason = responseMessage.ToolCalls is { Count: > 0 }
                 ? "tool_calls"
                 : TranslateFinishReason(completion.FinishReason);
@@ -519,22 +533,6 @@ public static class ChatCompletionsEndpoint
             ".bmp" => "image/bmp",
             _ => "image/*"
         };
-    }
-
-    private static List<ChatMessage> ApplyVirtualModelSystemPrompt(
-        List<ChatMessage> messages,
-        VirtualModelOptions? profile)
-    {
-        if (profile is null || string.IsNullOrWhiteSpace(profile.SystemPrompt))
-        {
-            return messages;
-        }
-
-        return
-        [
-            new ChatMessage(ChatRole.System, profile.SystemPrompt),
-            .. messages
-        ];
     }
 
     private static ChatMessageDto ToOpenAiMessage(ChatMessage message)

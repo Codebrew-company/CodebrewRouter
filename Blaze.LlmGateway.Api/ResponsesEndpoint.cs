@@ -23,7 +23,7 @@ public static class ResponsesEndpoint
         var availabilityRegistry = httpContext.RequestServices.GetRequiredService<IModelAvailabilityRegistry>();
         var messages = OpenAiProtocolMapper.ToChatMessages(request.Input);
         messages = OpenAiProtocolMapper.ApplyInstructions(messages, request.Instructions, request.Model, gatewayOptions);
-        var options = OpenAiProtocolMapper.ToChatOptions(request);
+        var options = OpenAiProtocolMapper.ToChatOptions(request, gatewayOptions);
 
         var selectedClient = await OpenAiProtocolMapper.ResolveClientAsync(
             request.Model,
@@ -33,7 +33,7 @@ public static class ResponsesEndpoint
             cancellationToken);
         var completion = await selectedClient.GetResponseAsync(messages, options, cancellationToken);
         var conversationId = ResolveConversationId(request.Conversation);
-        var response = OpenAiProtocolMapper.ToResponseObject(request, completion, conversationId);
+        var response = OpenAiProtocolMapper.ToResponseObject(request, completion, gatewayOptions, conversationId);
 
         if (request.Store.GetValueOrDefault(true) || !string.IsNullOrWhiteSpace(conversationId))
         {

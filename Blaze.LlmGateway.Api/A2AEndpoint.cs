@@ -64,8 +64,18 @@ public static class A2AEndpoint
             modelSelectionResolver,
             availabilityRegistry,
             cancellationToken);
-        var completion = await selected.GetResponseAsync(messages, new ChatOptions { ModelId = agentName }, cancellationToken);
-        var responseText = completion.Text ?? completion.Messages?.FirstOrDefault()?.Text ?? string.Empty;
+        var completion = await selected.GetResponseAsync(
+            messages,
+            new ChatOptions
+            {
+                ModelId = agentName,
+                ResponseFormat = OpenAiProtocolMapper.GetResponseFormatForModel(agentName, gatewayOptions)
+            },
+            cancellationToken);
+        var responseText = OpenAiProtocolMapper.NormalizeAssistantContent(
+            agentName,
+            completion.Text ?? completion.Messages?.FirstOrDefault()?.Text ?? string.Empty,
+            gatewayOptions);
         var task = new A2ATask(
             Id: Ids.New("task"),
             AgentName: agentName,

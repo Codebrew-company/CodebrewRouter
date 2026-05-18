@@ -341,6 +341,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("CodebrewRouter", yardly.GetProperty("provider").GetString());
         Assert.Equal("yardly", yardly.GetProperty("ownedBy").GetString());
         Assert.Equal("virtual", yardly.GetProperty("source").GetString());
+        Assert.Equal("yardly-json", yardly.GetProperty("responseContract").GetString());
     }
 
     [Fact]
@@ -359,6 +360,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("codebrew", codebrewSharpClient.GetProperty("ownedBy").GetString());
         Assert.Equal("virtual", codebrewSharpClient.GetProperty("source").GetString());
         Assert.Equal("codebrewRouter", codebrewSharpClient.GetProperty("extends").GetString());
+        Assert.Equal("natural-language", codebrewSharpClient.GetProperty("responseContract").GetString());
     }
 
     [Fact]
@@ -452,6 +454,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("yardly", json.RootElement.GetProperty("id").GetString());
         Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
         Assert.Equal("yardly", json.RootElement.GetProperty("ownedBy").GetString());
+        Assert.Equal("yardly-json", json.RootElement.GetProperty("responseContract").GetString());
 
         var generalRule = json.RootElement.GetProperty("fallbackRules")
             .EnumerateArray()
@@ -476,6 +479,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
         Assert.Equal("codebrew", json.RootElement.GetProperty("ownedBy").GetString());
         Assert.Equal("codebrewRouter", json.RootElement.GetProperty("extends").GetString());
+        Assert.Equal("natural-language", json.RootElement.GetProperty("responseContract").GetString());
 
         var generalRule = json.RootElement.GetProperty("fallbackRules")
             .EnumerateArray()

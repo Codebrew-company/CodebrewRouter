@@ -9,6 +9,38 @@ namespace Blaze.LlmGateway.Api;
 
 internal static class OpenAiProtocolMapper
 {
+    private const string NaturalLanguageContractPrompt =
+        "Return a normal conversational Markdown response. Do not return a raw JSON object unless the user explicitly requested JSON.";
+
+    private const string YardlyJsonContractPrompt = """
+        Return only one valid JSON object. Do not wrap it in Markdown fences and do not add prose before or after it.
+        The object must match the Yardly response contract:
+        {
+          "schemaVersion": "yardly.response.v1",
+          "responseType": "plant_identification | plant_health_assessment | care_guidance | clarification | general_yardly",
+          "summary": "short user-facing summary",
+          "confidence": 0.0,
+          "observations": [
+            { "label": "what you observed", "evidence": "visible or user-provided evidence", "confidence": 0.0 }
+          ],
+          "possibleIssues": [
+            { "name": "issue name", "likelihood": 0.0, "severity": "low | medium | high | unknown", "rationale": "why it may apply" }
+          ],
+          "carePlan": [
+            { "title": "step title", "instructions": "practical instructions", "priority": "low | medium | high", "timeframe": "when to do it" }
+          ],
+          "followUpQuestions": ["question to ask when evidence is limited"],
+          "safetyNotes": ["toxicity, edible safety, pesticide, or local expert caveats"],
+          "ui": {
+            "cards": [],
+            "actions": [
+              { "id": "ask_for_photo", "label": "Add a clearer photo", "type": "secondary" }
+            ]
+          }
+        }
+        Use empty arrays when a section does not apply. Use confidence values from 0.0 to 1.0.
+        """;
+
     public static List<ChatMessage> ToChatMessages(JsonElement input)
     {
         if (input.ValueKind is JsonValueKind.String)
@@ -69,6 +101,11 @@ internal static class OpenAiProtocolMapper
             systemPrompts.Add(new ChatMessage(ChatRole.System, instructions));
         }
 
+        if (profile is not null)
+        {
+            systemPrompts.Add(new ChatMessage(ChatRole.System, GetResponseContractPrompt(profile)));
+        }
+
         return systemPrompts.Count == 0
             ? [.. messages]
             : [.. systemPrompts, .. messages];
@@ -96,26 +133,73 @@ internal static class OpenAiProtocolMapper
         return chatClient;
     }
 
-    public static ChatOptions ToChatOptions(CreateResponseRequest request)
-        => new()
+    public static ChatOptions ToChatOptions(CreateResponseRequest request, IOptions<LlmGatewayOptions> gatewayOptions)
+    {
+        var options = new ChatOptions
         {
             ModelId = request.Model,
             Temperature = request.Temperature,
             TopP = request.TopP,
             MaxOutputTokens = request.MaxOutputTokens ?? request.MaxCompletionTokens,
-            AllowMultipleToolCalls = request.ParallelToolCalls
+            AllowMultipleToolCalls = request.ParallelToolCalls,
+            ResponseFormat = GetResponseFormatForModel(request.Model, gatewayOptions)
         };
+
+        return options;
+    }
+
+    public static ChatResponseFormat? GetResponseFormatForModel(
+        string model,
+        IOptions<LlmGatewayOptions> gatewayOptions,
+        ChatResponseFormat? requestedFormat = null)
+    {
+        var profile = gatewayOptions.Value.FindVirtualModel(model);
+        return VirtualModelResponseContracts.RequiresYardlyJson(profile)
+            ? ChatResponseFormat.Json
+            : requestedFormat;
+    }
+
+    public static string NormalizeAssistantContent(
+        string model,
+        string content,
+        IOptions<LlmGatewayOptions> gatewayOptions)
+    {
+        var profile = gatewayOptions.Value.FindVirtualModel(model);
+        if (!VirtualModelResponseContracts.RequiresYardlyJson(profile))
+        {
+            return content;
+        }
+
+        var trimmed = StripJsonCodeFence(content);
+        if (IsYardlyJsonObject(trimmed))
+        {
+            return trimmed;
+        }
+
+        return CreateYardlyFallbackJson(content);
+    }
 
     public static ResponseObject ToResponseObject(
         CreateResponseRequest request,
         ChatResponse completion,
+        IOptions<LlmGatewayOptions> gatewayOptions,
         string? conversationId = null,
         string? responseId = null)
     {
         var output = new List<ResponseOutputItem>();
-        var outputText = completion.Text ?? string.Empty;
+        var outputText = NormalizeAssistantContent(request.Model, completion.Text ?? string.Empty, gatewayOptions);
 
-        foreach (var message in completion.Messages ?? [])
+        if (VirtualModelResponseContracts.RequiresYardlyJson(gatewayOptions.Value.FindVirtualModel(request.Model)))
+        {
+            output.Add(new ResponseOutputItem(
+                Id: Ids.New("msg"),
+                Type: "message",
+                Status: "completed",
+                Role: "assistant",
+                Content: [new ResponseContentPart("output_text", outputText)]));
+        }
+
+        foreach (var message in output.Count == 0 ? completion.Messages ?? [] : [])
         {
             if (!string.IsNullOrEmpty(message.Text))
             {
@@ -277,4 +361,78 @@ internal static class OpenAiProtocolMapper
             : value > int.MaxValue
                 ? int.MaxValue
                 : (int)value.Value;
+
+    private static string GetResponseContractPrompt(VirtualModelOptions profile)
+        => VirtualModelResponseContracts.RequiresYardlyJson(profile)
+            ? YardlyJsonContractPrompt
+            : NaturalLanguageContractPrompt;
+
+    private static string StripJsonCodeFence(string content)
+    {
+        var trimmed = content.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        var firstLineEnd = trimmed.IndexOf('\n');
+        if (firstLineEnd < 0)
+        {
+            return trimmed;
+        }
+
+        var withoutOpeningFence = trimmed[(firstLineEnd + 1)..].Trim();
+        if (withoutOpeningFence.EndsWith("```", StringComparison.Ordinal))
+        {
+            withoutOpeningFence = withoutOpeningFence[..^3].Trim();
+        }
+
+        return withoutOpeningFence;
+    }
+
+    private static bool IsYardlyJsonObject(string content)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(content);
+            return json.RootElement.ValueKind == JsonValueKind.Object &&
+                   json.RootElement.TryGetProperty("schemaVersion", out var schemaVersion) &&
+                   string.Equals(schemaVersion.GetString(), "yardly.response.v1", StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string CreateYardlyFallbackJson(string content)
+    {
+        var summary = string.IsNullOrWhiteSpace(content)
+            ? "I need more information to provide Yardly guidance."
+            : content.Trim();
+        var responseType = summary.Contains("photo", StringComparison.OrdinalIgnoreCase) ||
+                           summary.Contains("more information", StringComparison.OrdinalIgnoreCase)
+            ? "clarification"
+            : "general_yardly";
+
+        var envelope = new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = "yardly.response.v1",
+            ["responseType"] = responseType,
+            ["summary"] = summary,
+            ["confidence"] = 0.0,
+            ["observations"] = Array.Empty<object>(),
+            ["possibleIssues"] = Array.Empty<object>(),
+            ["carePlan"] = Array.Empty<object>(),
+            ["followUpQuestions"] = Array.Empty<string>(),
+            ["safetyNotes"] = Array.Empty<string>(),
+            ["ui"] = new Dictionary<string, object?>
+            {
+                ["cards"] = Array.Empty<object>(),
+                ["actions"] = Array.Empty<object>()
+            }
+        };
+
+        return JsonSerializer.Serialize(envelope, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
 }
