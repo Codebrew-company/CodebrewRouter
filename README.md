@@ -237,15 +237,15 @@ This repository ships a **9-agent development squad** for rapid, high-quality fe
 
 Codex skills for this repository are project-local only and live under `.agents/skills/`. Do not install CodebrewRouter-specific skills into a user-global Codex skill directory unless that is explicitly requested.
 
-The project skill pack is designed around five focused workflows:
+The project skill pack has five focused workflows:
 
-- `codebrewrouter-architecture-routing` for MEAI pipeline, routing, provider DI, streaming, context sizing, and model catalog work.
-- `codebrewrouter-codebase-onboarding` for repository maps, architecture summaries, likely-file discovery, and contributor onboarding.
-- `codebrewrouter-mcp-provider-security` for MCP, provider secrets, cloud egress, tool exposure, supply-chain, and agent governance review.
-- `codebrewrouter-aspire-local-dev` for AppHost, ServiceDefaults, local inference, model warmup, provider parameters, Open WebUI, and local troubleshooting.
-- `codebrewrouter-logging-contract` for the existing `[ROUTER-*]` and `[AGENT-*]` logging contract.
+- `.agents/skills/codebrewrouter-architecture-routing/` for MEAI pipeline, routing, provider DI, streaming, context sizing, and model catalog work.
+- `.agents/skills/codebrewrouter-codebase-onboarding/` for repository maps, architecture summaries, likely-file discovery, and contributor onboarding.
+- `.agents/skills/codebrewrouter-mcp-provider-security/` for MCP, provider secrets, cloud egress, tool exposure, supply-chain, and agent governance review.
+- `.agents/skills/codebrewrouter-aspire-local-dev/` for AppHost, ServiceDefaults, local inference, model warmup, provider parameters, Open WebUI, and local troubleshooting.
+- `.agents/skills/codebrewrouter-logging-contract/` for the existing `[ROUTER-*]` and `[AGENT-*]` logging contract.
 
-The approved design is in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`.
+The approved design is in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`, and the implementation plan is in `Docs/superpowers/plans/2026-05-22-codebrewrouter-codex-project-skills.md`.
 
 ### Copilot
 

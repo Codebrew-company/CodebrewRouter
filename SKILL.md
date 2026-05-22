@@ -13,17 +13,17 @@ This repository keeps CodebrewRouter-specific Codex skills project-local under `
 - Do not treat Copilot agents, OpenCode commands, or generated squad plugins as Codex skill sources of truth.
 - Reuse existing repo docs and ADRs instead of copying long references into skill folders.
 
-## Planned Pack
+## Project Skill Pack
 
-The approved project skill design is in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`.
+The approved project skill design is in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`, and the implementation plan is in `Docs/superpowers/plans/2026-05-22-codebrewrouter-codex-project-skills.md`.
 
 The pack contains:
 
-1. `codebrewrouter-architecture-routing`
-2. `codebrewrouter-codebase-onboarding`
-3. `codebrewrouter-mcp-provider-security`
-4. `codebrewrouter-aspire-local-dev`
-5. `codebrewrouter-logging-contract`
+1. `.agents/skills/codebrewrouter-architecture-routing/`
+2. `.agents/skills/codebrewrouter-codebase-onboarding/`
+3. `.agents/skills/codebrewrouter-mcp-provider-security/`
+4. `.agents/skills/codebrewrouter-aspire-local-dev/`
+5. `.agents/skills/codebrewrouter-logging-contract/`
 
 ## Maintenance
 
