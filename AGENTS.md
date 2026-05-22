@@ -2,6 +2,20 @@
 
 .NET 10 LLM Gateway — an intelligent LLM routing proxy built on `Microsoft.Extensions.AI`.
 
+## Codex Project Skills
+
+Codex skills for this repository are project-local only. Keep them under `.agents/skills/` and do not install or copy them into `$CODEX_HOME/skills` or any other user-global skill directory unless the user explicitly asks for a global install.
+
+Planned project skill pack:
+
+- `codebrewrouter-architecture-routing` — MEAI pipeline, keyed provider DI, routing strategies, streaming, provider identity, failover, context sizing, and model catalog behavior.
+- `codebrewrouter-codebase-onboarding` — repository mapping, architecture explanation, likely-file discovery, docs/ADR summaries, and contributor onboarding.
+- `codebrewrouter-mcp-provider-security` — MCP configuration, provider secrets, cloud egress, tool exposure, supply-chain, and agent governance review.
+- `codebrewrouter-aspire-local-dev` — Aspire AppHost, ServiceDefaults, local model startup, local inference, provider parameters, Open WebUI, Agent Framework DevUI, and local troubleshooting.
+- `codebrewrouter-logging-contract` — existing router and agent logging contract guard for `[ROUTER-*]` and `[AGENT-*]` tags.
+
+The design is documented in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`.
+
 ## Custom Agent
 
 A repo-scoped Copilot custom agent is available at `.github/agents/llm-gateway-architect.agent.md`.

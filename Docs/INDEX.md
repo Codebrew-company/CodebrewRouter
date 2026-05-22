@@ -55,6 +55,11 @@ All squad executions create timestamped run directories in `Docs/squad/runs/<tim
 - **[CLAUDE.md](../CLAUDE.md)** — Claude Code instructions, conventions, and architecture
 - **[.github/copilot-instructions.md](../.github/copilot-instructions.md)** — Squad structure, phased vs. parallel paths, all commands
 - **[SKILL.md](../SKILL.md)** — Skill definitions and integration guide
+- **[CodebrewRouter Codex Project Skills Design](superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md)** — Approved design for Codex-only, project-local skills under `.agents/skills/`
+
+### Codex Project Skills
+
+Project-specific Codex skills are kept under `.agents/skills/` only. The approved skill pack covers architecture/routing, codebase onboarding, MCP/provider security, Aspire/local development, and the existing logging contract guard. These skills are intentionally not installed globally and are separate from Copilot/OpenCode packaging.
 
 ---
 
