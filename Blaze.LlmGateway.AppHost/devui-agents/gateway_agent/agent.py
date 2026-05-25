@@ -11,8 +11,9 @@ The agent talks to the OpenAI-compatible endpoint exposed by the gateway
                                            the gateway does not enforce auth yet)
 
 The `model` value is not the upstream model name — the gateway's router
-picks the real provider based on message content. Pass ``"codebrew-router"``
-(the virtual router model) or any known destination name.
+picks the real provider based on message content. The AppHost defaults this
+agent to ``"codebrewSharpClient"``, a C#/.NET virtual model that extends
+``"codebrewRouter"``.
 """
 from __future__ import annotations
 
@@ -24,19 +25,21 @@ from agent_framework.openai import OpenAIChatClient
 
 _base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:5000/v1")
 _api_key = os.environ.get("OPENAI_API_KEY", "sk-blaze-devui")
-_model = os.environ.get("BLAZE_GATEWAY_MODEL", "codebrew-router")
+_model = os.environ.get("BLAZE_GATEWAY_MODEL", "codebrewSharpClient")
 
 agent = ChatAgent(
     name="BlazeGateway",
     description=(
         "Chats through the Blaze.LlmGateway router. "
-        "The gateway selects the real provider (AzureFoundry / FoundryLocal / "
-        "GithubModels) based on prompt content."
+        "The gateway selects the real provider based on prompt content, "
+        "availability, and the CodebrewRouter fallback rules."
     ),
     instructions=(
         "You are a helpful assistant served through the Blaze.LlmGateway "
-        "routing proxy. Respond naturally — the gateway decides which "
-        "upstream provider to use."
+        "routing proxy. Respond naturally and answer directly. Do not include "
+        "hidden reasoning, planning notes, scratchpad text, or a thinking "
+        "process in chat responses. The gateway decides which upstream "
+        "provider to use."
     ),
     chat_client=OpenAIChatClient(
         base_url=_base_url,

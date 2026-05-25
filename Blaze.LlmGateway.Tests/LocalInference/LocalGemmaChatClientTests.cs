@@ -104,17 +104,22 @@ public class LocalGemmaChatClientTests
     }
 
     [Fact]
-    public async Task GetResponseAsync_WithEmptyMessages_ReturnsEmptyResponse()
+    public async Task GetResponseAsync_WhenModelPathIsMissing_ThrowsModelNotLoadedError()
     {
         // Arrange
         var client = new LocalGemmaChatClient(null);
-        var messages = Array.Empty<ChatMessage>();
+        var messages = new[]
+        {
+            new ChatMessage(ChatRole.User, "Hello")
+        };
 
         // Act
-        var result = await client.GetResponseAsync(messages);
+        var action = async () => await client.GetResponseAsync(messages);
 
         // Assert
-        result.Should().NotBeNull();
+        await action.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*LocalGemma*ModelPath*Gemma*GGUF*");
     }
 
     [Fact]
@@ -136,7 +141,7 @@ public class LocalGemmaChatClientTests
     }
 
     [Fact]
-    public async Task GetStreamingResponseAsync_WithValidMessages_ReturnsUpdates()
+    public async Task GetStreamingResponseAsync_WithValidMessagesAndMissingModelPath_ThrowsModelNotLoadedError()
     {
         // Arrange
         var client = new LocalGemmaChatClient(null);
@@ -146,19 +151,22 @@ public class LocalGemmaChatClientTests
         };
 
         // Act
-        var updates = new List<ChatResponseUpdate>();
-        await foreach (var update in client.GetStreamingResponseAsync(messages))
+        var action = async () =>
         {
-            updates.Add(update);
-        }
+            await foreach (var update in client.GetStreamingResponseAsync(messages))
+            {
+                _ = update;
+            }
+        };
 
         // Assert
-        // With no model loaded, should return empty stream but not throw
-        updates.Should().BeEmpty();
+        await action.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*LocalGemma*ModelPath*Gemma*GGUF*");
     }
 
     [Fact]
-    public async Task GetStreamingResponseAsync_RespectsCancellationToken()
+    public async Task GetStreamingResponseAsync_WithCancellationAndMissingModelPath_ThrowsModelNotLoadedError()
     {
         // Arrange
         var client = new LocalGemmaChatClient(null);
@@ -169,25 +177,22 @@ public class LocalGemmaChatClientTests
         var cts = new CancellationTokenSource();
 
         // Act
-        var updates = new List<ChatResponseUpdate>();
-        try
+        var action = async () =>
         {
             await foreach (var update in client.GetStreamingResponseAsync(messages, cancellationToken: cts.Token))
             {
-                updates.Add(update);
+                _ = update;
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected behavior
-        }
+        };
 
         // Assert
-        updates.Should().NotBeNull();
+        await action.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*LocalGemma*ModelPath*Gemma*GGUF*");
     }
 
     [Fact]
-    public async Task GetResponseAsync_HandlesMultipleMessages()
+    public async Task GetResponseAsync_WithMissingModelPathAndMultipleMessages_ThrowsModelNotLoadedError()
     {
         // Arrange
         var client = new LocalGemmaChatClient(null);
@@ -199,9 +204,11 @@ public class LocalGemmaChatClientTests
         };
 
         // Act
-        var result = await client.GetResponseAsync(messages);
+        var action = async () => await client.GetResponseAsync(messages);
 
         // Assert
-        result.Should().NotBeNull();
+        await action.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*LocalGemma*ModelPath*Gemma*GGUF*");
     }
 }

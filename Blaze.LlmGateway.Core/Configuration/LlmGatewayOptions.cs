@@ -14,6 +14,7 @@ public class LlmGatewayOptions
     public RoutingOptions Routing { get; set; } = new();
     public LocalInferenceOptions LocalInference { get; set; } = new();
     public CodebrewRouterOptions CodebrewRouter { get; set; } = new();
+    public Dictionary<string, VirtualModelOptions> VirtualModels { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public ModelAvailabilityOptions Availability { get; set; } = new();
     public PromptCleanupOptions PromptCleanup { get; set; } = new();
     public TaskClassificationOptions TaskClassification { get; set; } = new();

@@ -28,6 +28,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                 builder.ConfigureServices(services =>
                 {
                     RemoveServicesByType(services, typeof(IChatClient));
+                    DisableLocalGemmaWarmup(services);
 
                     var mockChatClient = new Mock<IChatClient>();
                     mockChatClient
@@ -154,7 +155,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
             }
         }
 
-        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio" };
+        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "LocalGemma", "CodebrewRouter" };
         var hasKnownProvider = providers.Any(p => knownProviders.Contains(p));
         Assert.True(hasKnownProvider, $"No known providers found. Found: {string.Join(", ", providers)}");
     }
@@ -326,6 +327,63 @@ public class ModelsIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Models_ContainsYardlyConfiguredVirtualModel()
+    {
+        var response = await _client!.GetAsync("/v1/models");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var yardly = json.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Single(model => string.Equals(model.GetProperty("id").GetString(), "yardly", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("model", yardly.GetProperty("object").GetString());
+        Assert.Equal("CodebrewRouter", yardly.GetProperty("provider").GetString());
+        Assert.Equal("yardly", yardly.GetProperty("ownedBy").GetString());
+        Assert.Equal("virtual", yardly.GetProperty("source").GetString());
+        Assert.Equal("yardly-json", yardly.GetProperty("responseContract").GetString());
+    }
+
+    [Fact]
+    public async Task Models_ContainsCodebrewSharpClientVirtualModel()
+    {
+        var response = await _client!.GetAsync("/v1/models");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var codebrewSharpClient = json.RootElement.GetProperty("data")
+            .EnumerateArray()
+            .Single(model => string.Equals(model.GetProperty("id").GetString(), "codebrewSharpClient", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal("model", codebrewSharpClient.GetProperty("object").GetString());
+        Assert.Equal("CodebrewRouter", codebrewSharpClient.GetProperty("provider").GetString());
+        Assert.Equal("codebrew", codebrewSharpClient.GetProperty("ownedBy").GetString());
+        Assert.Equal("virtual", codebrewSharpClient.GetProperty("source").GetString());
+        Assert.Equal("codebrewRouter", codebrewSharpClient.GetProperty("extends").GetString());
+        Assert.Equal("natural-language", codebrewSharpClient.GetProperty("responseContract").GetString());
+    }
+
+    [Fact]
+    public async Task Models_ContainsPlannerAndCouncilVirtualModelsWithCapabilities()
+    {
+        var response = await _client!.GetAsync("/v1/models");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var models = json.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        var planner = models.Single(model => string.Equals(model.GetProperty("id").GetString(), "codebrewPlanner", StringComparison.OrdinalIgnoreCase));
+        var council = models.Single(model => string.Equals(model.GetProperty("id").GetString(), "codebrewCouncil", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(planner.GetProperty("toolSupport").GetBoolean());
+        Assert.False(planner.GetProperty("cloudRequired").GetBoolean());
+        Assert.Contains("planning", planner.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()));
+
+        Assert.Equal("concurrent", council.GetProperty("workflow").GetString());
+        Assert.True(council.GetProperty("cloudRequired").GetBoolean());
+        Assert.Contains("council", council.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()));
+    }
+
+    [Fact]
     public async Task CodebrewRouterModelDetails_ReturnsVirtualModelMetadata()
     {
         var response = await _client!.GetAsync("/v1/models/codebrewRouter");
@@ -372,7 +430,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         using var json = JsonDocument.Parse(body);
 
         var backingModels = json.RootElement.GetProperty("backingModels");
-        // At least the local LLamaSharp provider should be available
+        // At least the local provider should be available
         Assert.True(backingModels.GetArrayLength() > 0);
 
         var providers = backingModels.EnumerateArray()
@@ -383,6 +441,55 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.DoesNotContain("LmStudio", providers);
         Assert.DoesNotContain("AzureFoundry", providers);
         Assert.DoesNotContain("FoundryLocal", providers);
+    }
+
+    [Fact]
+    public async Task YardlyModelDetails_ReturnsConfiguredVirtualModelMetadata()
+    {
+        var response = await _client!.GetAsync("/v1/models/yardly");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("yardly", json.RootElement.GetProperty("id").GetString());
+        Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
+        Assert.Equal("yardly", json.RootElement.GetProperty("ownedBy").GetString());
+        Assert.Equal("yardly-json", json.RootElement.GetProperty("responseContract").GetString());
+
+        var generalRule = json.RootElement.GetProperty("fallbackRules")
+            .EnumerateArray()
+            .Single(rule => string.Equals(rule.GetProperty("taskType").GetString(), "General", StringComparison.OrdinalIgnoreCase));
+        var providers = generalRule.GetProperty("providers")
+            .EnumerateArray()
+            .Select(provider => provider.GetString() ?? "")
+            .ToArray();
+
+        Assert.Equal(new[] { "LocalGemma" }, providers);
+    }
+
+    [Fact]
+    public async Task CodebrewSharpClientModelDetails_ReturnsCodebrewRouterInheritanceAndFallbackRules()
+    {
+        var response = await _client!.GetAsync("/v1/models/codebrewSharpClient");
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("codebrewSharpClient", json.RootElement.GetProperty("id").GetString());
+        Assert.Equal("CodebrewRouter", json.RootElement.GetProperty("provider").GetString());
+        Assert.Equal("codebrew", json.RootElement.GetProperty("ownedBy").GetString());
+        Assert.Equal("codebrewRouter", json.RootElement.GetProperty("extends").GetString());
+        Assert.Equal("natural-language", json.RootElement.GetProperty("responseContract").GetString());
+
+        var generalRule = json.RootElement.GetProperty("fallbackRules")
+            .EnumerateArray()
+            .Single(rule => string.Equals(rule.GetProperty("taskType").GetString(), "General", StringComparison.OrdinalIgnoreCase));
+        var providers = generalRule.GetProperty("providers")
+            .EnumerateArray()
+            .Select(provider => provider.GetString() ?? "")
+            .ToArray();
+
+        Assert.Equal(new[] { "LocalGemma" }, providers);
     }
 
     [Fact]
@@ -415,6 +522,16 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal("Connection refused", lmStudio.GetProperty("errorMessage").GetString());
     }
 
+    [Fact]
+    public async Task DevUi_IsMountedInDevelopmentHost()
+    {
+        var response = await _client!.GetAsync("/devui");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.IsSuccessStatusCode, body);
+        Assert.Contains("html", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void RemoveServicesByType(IServiceCollection services, Type serviceType)
     {
         var descriptors = services.Where(d => d.ServiceType == serviceType).ToList();
@@ -422,6 +539,42 @@ public class ModelsIntegrationTests : IAsyncLifetime
         {
             services.Remove(descriptor);
         }
+    }
+
+    private static void DisableLocalGemmaWarmup(IServiceCollection services)
+    {
+        RemoveServicesByType(services, typeof(LocalInferenceOptions));
+        RemoveServicesByType(services, typeof(IOptions<LocalInferenceOptions>));
+
+        var modelPath = CreateAvailableLocalGemmaPath();
+        var options = new LocalInferenceOptions
+        {
+            Enabled = true,
+            ModelPath = modelPath,
+            WarmupEnabled = false,
+            BlockStartupUntilWarm = false
+        };
+
+        services.AddSingleton(options);
+        services.AddSingleton(Options.Create(options));
+        services.PostConfigure<LlmGatewayOptions>(gatewayOptions =>
+        {
+            gatewayOptions.LocalInference.Enabled = true;
+            gatewayOptions.LocalInference.ModelPath = modelPath;
+            gatewayOptions.LocalInference.WarmupEnabled = false;
+            gatewayOptions.LocalInference.BlockStartupUntilWarm = false;
+        });
+    }
+
+    private static string CreateAvailableLocalGemmaPath()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "codebrewrouter-test-local-gemma.gguf");
+        if (!File.Exists(path))
+        {
+            File.WriteAllBytes(path, []);
+        }
+
+        return path;
     }
 
     private static async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponse()
@@ -438,7 +591,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                 new AvailableModel("Phi-4-mini-instruct-cuda-gpu:5", "FoundryLocal", "openai", "configured"),
                 new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "live"),
                 new AvailableModel("local-model", "LmStudio", "lmstudio", "configured"),
-                new AvailableModel("local-gemma", "LocalGemma", "llamasharp", "configured")
+                new AvailableModel("local-gemma", "LocalGemma", "lmkit", "configured")
             ]);
 
         public Task<AvailableModel?> FindByIdAsync(string modelId, CancellationToken cancellationToken = default)

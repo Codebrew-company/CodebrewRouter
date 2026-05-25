@@ -1,9 +1,11 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Blaze.LlmGateway.Core.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -26,6 +28,8 @@ public class OllamaLocalIntegrationTests : IAsyncLifetime
             {
                 builder.ConfigureServices(services =>
                 {
+                    DisableLocalGemmaWarmup(services);
+
                     var descriptorsToRemove = services
                         .Where(d => d.ServiceType == typeof(IChatClient))
                         .ToList();
@@ -291,6 +295,51 @@ public class OllamaLocalIntegrationTests : IAsyncLifetime
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
             await Task.Delay(5);
+        }
+    }
+
+    private static void DisableLocalGemmaWarmup(IServiceCollection services)
+    {
+        RemoveServicesByType(services, typeof(LocalInferenceOptions));
+        RemoveServicesByType(services, typeof(IOptions<LocalInferenceOptions>));
+
+        var modelPath = CreateAvailableLocalGemmaPath();
+        var options = new LocalInferenceOptions
+        {
+            Enabled = true,
+            ModelPath = modelPath,
+            WarmupEnabled = false,
+            BlockStartupUntilWarm = false
+        };
+
+        services.AddSingleton(options);
+        services.AddSingleton(Options.Create(options));
+        services.PostConfigure<LlmGatewayOptions>(gatewayOptions =>
+        {
+            gatewayOptions.LocalInference.Enabled = true;
+            gatewayOptions.LocalInference.ModelPath = modelPath;
+            gatewayOptions.LocalInference.WarmupEnabled = false;
+            gatewayOptions.LocalInference.BlockStartupUntilWarm = false;
+        });
+    }
+
+    private static string CreateAvailableLocalGemmaPath()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "codebrewrouter-test-local-gemma.gguf");
+        if (!File.Exists(path))
+        {
+            File.WriteAllBytes(path, []);
+        }
+
+        return path;
+    }
+
+    private static void RemoveServicesByType(IServiceCollection services, Type serviceType)
+    {
+        var descriptors = services.Where(d => d.ServiceType == serviceType).ToList();
+        foreach (var descriptor in descriptors)
+        {
+            services.Remove(descriptor);
         }
     }
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodebrewRouter Aspire Local Dev"
+  short_description: "Guide Aspire and local runtime work"
+  default_prompt: "Use $codebrewrouter-aspire-local-dev to troubleshoot AppHost, local inference, or local dev setup."

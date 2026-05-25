@@ -1,7 +1,7 @@
 namespace Blaze.LlmGateway.Core.Configuration;
 
 /// <summary>
-/// Configuration for local LLM inference via Gemma + LLamaSharp.
+/// Configuration for local LLM inference via Gemma using LM-Kit.
 /// Binds from <c>LlmGateway:LocalInference</c> in appsettings.
 /// </summary>
 public class LocalInferenceOptions
@@ -76,6 +76,37 @@ public class LocalInferenceOptions
     /// When null, a minimal default system prompt is used.
     /// </summary>
     public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// When true, the local Gemma provider is loaded and primed during application startup.
+    /// Default: true.
+    /// </summary>
+    public bool WarmupEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Prompt used for the startup warmup pass.
+    /// Keep this short because it exists only to initialize the first inference path.
+    /// Default: "ready".
+    /// </summary>
+    public string WarmupPrompt { get; set; } = "ready";
+
+    /// <summary>
+    /// Maximum tokens to request during startup warmup.
+    /// Default: 1.
+    /// </summary>
+    public int WarmupMaxOutputTokens { get; set; } = 1;
+
+    /// <summary>
+    /// Maximum time in seconds to wait for startup warmup.
+    /// Default: 120 seconds.
+    /// </summary>
+    public int WarmupTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// When true, startup fails if the configured local model cannot be loaded and primed.
+    /// Default: true for offline-first operation.
+    /// </summary>
+    public bool BlockStartupUntilWarm { get; set; } = true;
 
     /// <summary>
     /// Cache TTL in seconds for model availability checks in LocalModelAvailabilityService.

@@ -9,13 +9,13 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0-preview.1.26215.2" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0-preview.1.26215.2" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.7" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="2.0.0" />
-    <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
+    <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
     <!-- Qwen model tokenizer support (MIT licensed) for native tokenization of Qwen models -->
-    <PackageReference Include="Yuniko.Software.Qwen3Tokenizer" Version="1.1.0" />
+    <PackageReference Include="Yuniko.Software.Qwen3Tokenizer" Version="1.2.0" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -26,7 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Bcl.Memory" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.7" />
   </ItemGroup>
 
 </Project>

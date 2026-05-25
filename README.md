@@ -159,14 +159,15 @@ For interactively testing `/v1/chat/completions` (including streaming and routin
 ```jsonc
 // Blaze.LlmGateway.AppHost/appsettings.json
 "DevUI": {
-  "OpenWebUI": true,        // default — generic OpenAI-compatible chat UI
-  "AgentFramework": false   // opt-in — Python Agent Framework DevUI
+  "OpenWebUI": true,              // default: generic OpenAI-compatible chat UI
+  "OpenWebUIImageTag": "v0.9.5",  // Open WebUI container tag
+  "AgentFramework": false         // opt-in: Python Agent Framework DevUI
 }
 ```
 
 | Playground | Resource | Prereqs | Good for |
 |---|---|---|---|
-| **Open WebUI** | container `ghcr.io/open-webui/open-webui:v0.9.2`, port 8080 | Docker Desktop. `OPENAI_API_BASE_URL` is wired at `{api}/v1` automatically. Login disabled for local dev; chats persist in the `blaze-openwebui-data` volume. | Everyday chat testing, comparing routed responses, multi-turn conversations. |
+| **Open WebUI** | container `ghcr.io/open-webui/open-webui:v0.9.5`, port 8080 | Docker Desktop. `OPENAI_API_BASE_URL` is wired at `{api}/v1` automatically. Login disabled for local dev; chats persist in the `blaze-openwebui-data` volume. Override `DevUI:OpenWebUIImageTag` to test another release. | Everyday chat testing, comparing routed responses, multi-turn conversations. |
 | **Agent Framework DevUI** | executable `devui` (port 8765) | Python 3.11+ with `pip install agent-framework-devui` (puts `devui` on PATH). AppHost passes the bundled `devui-agents/` directory containing a `gateway_agent` that chats through the gateway. | Trace / telemetry inspection and exercising the Python `agent-framework` SDK against the gateway. |
 
 Once `dotnet run --project Blaze.LlmGateway.AppHost` is up, open the Aspire dashboard and click the `openwebui` (or `agent-devui`) resource URL to reach the playground.
@@ -232,4 +233,20 @@ This repository ships a **9-agent development squad** for rapid, high-quality fe
 
 ## Agent Guidance
 
-For architecture decisions, pipeline changes, routing strategy work, and MCP integration, use the repo-scoped Copilot agent defined in `.github/agents/llm-gateway-architect.agent.md`. It has deep familiarity with the MEAI pipeline, all providers, and the project's conventions. Full build, test, and run commands are documented in CLAUDE.md.
+### Codex Project Skills
+
+Codex skills for this repository are project-local only and live under `.agents/skills/`. Do not install CodebrewRouter-specific skills into a user-global Codex skill directory unless that is explicitly requested.
+
+The project skill pack has five focused workflows:
+
+- `.agents/skills/codebrewrouter-architecture-routing/` for MEAI pipeline, routing, provider DI, streaming, context sizing, and model catalog work.
+- `.agents/skills/codebrewrouter-codebase-onboarding/` for repository maps, architecture summaries, likely-file discovery, and contributor onboarding.
+- `.agents/skills/codebrewrouter-mcp-provider-security/` for MCP, provider secrets, cloud egress, tool exposure, supply-chain, and agent governance review.
+- `.agents/skills/codebrewrouter-aspire-local-dev/` for AppHost, ServiceDefaults, local inference, model warmup, provider parameters, Open WebUI, and local troubleshooting.
+- `.agents/skills/codebrewrouter-logging-contract/` for the existing `[ROUTER-*]` and `[AGENT-*]` logging contract.
+
+The approved design is in `Docs/superpowers/specs/2026-05-22-codebrewrouter-codex-project-skills-design.md`, and the implementation plan is in `Docs/superpowers/plans/2026-05-22-codebrewrouter-codex-project-skills.md`.
+
+### Copilot
+
+For architecture decisions, pipeline changes, routing strategy work, and MCP integration in Copilot, use the repo-scoped Copilot agent defined in `.github/agents/llm-gateway-architect.agent.md`. It has deep familiarity with the MEAI pipeline, all providers, and the project's conventions. Full build, test, and run commands are documented in CLAUDE.md.
