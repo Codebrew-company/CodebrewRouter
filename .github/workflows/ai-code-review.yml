@@ -2,7 +2,7 @@ name: AI Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -11,20 +11,38 @@ permissions:
 
 jobs:
   ai-review:
-    # Only run on the self-hosted runner where LLM access is available
     runs-on: [self-hosted, linux, x64, hermes]
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for accurate diff against base
+          fetch-depth: 0
 
-      - name: Run AI Code Review
+      - name: Determine review tier
+        id: tier
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          # Label overrides: review:deep, review:medium
+          if echo "$PR_LABELS" | grep -q "review:deep"; then
+            echo "model=gpt-5.4" >> "$GITHUB_OUTPUT"
+            echo "tier=DEEP" >> "$GITHUB_OUTPUT"
+          elif echo "$PR_LABELS" | grep -q "review:medium"; then
+            echo "model=Kimi-K2.6" >> "$GITHUB_OUTPUT"
+            echo "tier=MEDIUM" >> "$GITHUB_OUTPUT"
+          else
+            # Default: Quick check with DeepSeek-V4-Pro
+            echo "model=DeepSeek-V4-Pro" >> "$GITHUB_OUTPUT"
+            echo "tier=QUICK" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run AI Code Review (${{ steps.tier.outputs.tier }})
         id: review
         env:
           AZURE_FOUNDRY_KEY: ${{ secrets.AZURE_FOUNDRY_KEY }}
-          AZURE_DEPLOYMENT: ${{ secrets.AZURE_DEPLOYMENT || 'DeepSeek-V4-Pro' }}
+          AZURE_DEPLOYMENT: ${{ steps.tier.outputs.model }}
+          REVIEW_TIER: ${{ steps.tier.outputs.tier }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
