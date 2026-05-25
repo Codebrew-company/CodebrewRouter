@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodebrewRouter MCP Provider Security"
+  short_description: "Review MCP and provider safety"
+  default_prompt: "Use $codebrewrouter-mcp-provider-security to review MCP, provider secrets, or cloud egress changes."

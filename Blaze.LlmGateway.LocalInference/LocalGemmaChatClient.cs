@@ -1,33 +1,28 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Blaze.LlmGateway.Core.Configuration;
-using LLama;
-using LLama.Common;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Blaze.LlmGateway.LocalInference;
 
 /// <summary>
-/// A thin MEAI adapter for local LLamaSharp inference using the Gemma model.
-/// Implements <see cref="DelegatingChatClient"/> to integrate with the MEAI pipeline.
-/// Implements <see cref="IAsyncDisposable"/> for proper cleanup of native LLamaSharp resources.
+/// MEAI adapter for local Gemma inference.
+/// The provider materializes a local or remote model source lazily, then keeps one LM-Kit runtime resident.
 /// </summary>
-public sealed class LocalGemmaChatClient : DelegatingChatClient, IAsyncDisposable
+public sealed class LocalGemmaChatClient : DelegatingChatClient, ILocalGemmaModelState, IAsyncDisposable
 {
-    private readonly LLamaWeights? _weights;
-    private readonly LLamaContext? _context;
-    private readonly InteractiveExecutor? _executor;
     private readonly LocalInferenceOptions _options;
-    private readonly SemaphoreSlim _inferenceLock = new(1, 1);
+    private readonly IModelDistributionProvider? _modelProvider;
+    private readonly ILogger<LocalGemmaChatClient>? _logger;
+    private readonly Func<LocalInferenceOptions, string, ILocalGemmaRuntime> _runtimeFactory;
+    private readonly SemaphoreSlim _loadLock = new(1, 1);
+    private readonly string? _unavailableReason;
+    private ILocalGemmaRuntime? _runtime;
+    private string? _resolvedModelPath;
     private bool _disposed;
 
-    public string? ModelPath { get; }
-
-    public bool IsModelLoaded => _executor is not null;
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="LocalGemmaChatClient"/>.
-    /// If modelPath is provided, loads the Gemma model; otherwise, uses a no-op client.
-    /// </summary>
     public LocalGemmaChatClient()
         : this((string?)null)
     {
@@ -38,192 +33,177 @@ public sealed class LocalGemmaChatClient : DelegatingChatClient, IAsyncDisposabl
     {
     }
 
-    internal LocalGemmaChatClient(LocalInferenceOptions options)
+    public LocalGemmaChatClient(
+        LocalInferenceOptions options,
+        IModelDistributionProvider? modelProvider = null,
+        ILogger<LocalGemmaChatClient>? logger = null)
+        : this(options, modelProvider, logger, null)
+    {
+    }
+
+    internal LocalGemmaChatClient(
+        LocalInferenceOptions options,
+        IModelDistributionProvider? modelProvider,
+        ILogger<LocalGemmaChatClient>? logger,
+        Func<LocalInferenceOptions, string, ILocalGemmaRuntime>? runtimeFactory = null)
         : base(new NoOpChatClientWithMetadata())
     {
-        _options = options;
-        ModelPath = options.ModelPath;
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _modelProvider = modelProvider;
+        _logger = logger;
+        _runtimeFactory = runtimeFactory ?? DefaultRuntimeFactory(logger);
 
-        var modelPath = options.ModelPath;
-        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+        if (!options.Enabled)
         {
-            _weights = null;
-            _context = null;
-            _executor = null;
-            return;
+            _unavailableReason = "LocalGemma is not loaded because local inference is disabled.";
         }
-
-        try
+        else if (string.IsNullOrWhiteSpace(options.ModelPath))
         {
-            var modelParams = new ModelParams(modelPath)
-            {
-                ContextSize = (uint)Math.Max(1, options.MaxContextTokens),
-                GpuLayerCount = 0,
-                UseMemorymap = true,
-            };
-
-            if (options.ThreadCount > 0)
-            {
-                modelParams.Threads = (uint)options.ThreadCount;
-                modelParams.BatchThreads = (uint)options.ThreadCount;
-            }
-
-            _weights = LLamaWeights.LoadFromFile(modelParams);
-            _context = new LLamaContext(_weights, modelParams);
-            _executor = new InteractiveExecutor(_context);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Failed to load Gemma model from '{modelPath}'", ex);
+            _unavailableReason =
+                "LocalGemma is not loaded because LlmGateway:LocalInference:ModelPath is not configured. " +
+                "Set it to a local Gemma GGUF file or a Hugging Face GGUF URL.";
         }
     }
 
-    /// <summary>
-    /// Streams chat completions using the local Gemma model.
-    /// </summary>
+    public string? ModelPath => _resolvedModelPath ?? _options.ModelPath;
+
+    public bool IsModelLoaded => _runtime is not null;
+
+    public async Task EnsureLoadedAsync(
+        CancellationToken cancellationToken = default,
+        Action? onModelFileReady = null)
+    {
+        if (_runtime is not null) return;
+
+        if (_unavailableReason is not null)
+        {
+            throw new InvalidOperationException(_unavailableReason);
+        }
+
+        await _loadLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_runtime is not null) return;
+
+            var resolvedPath = await ResolveModelPathAsync(cancellationToken);
+            _resolvedModelPath = resolvedPath;
+            onModelFileReady?.Invoke();
+            _runtime = _runtimeFactory(_options, resolvedPath);
+        }
+        finally
+        {
+            _loadLock.Release();
+        }
+    }
+
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> chatMessages,
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (_executor is null)
-        {
-            yield break;
-        }
-
         var messages = chatMessages.ToList();
         if (messages.Count == 0)
         {
             yield break;
         }
 
-        var history = new List<ChatMessage>();
-        for (int i = 0; i < messages.Count - 1; i++)
-        {
-            history.Add(messages[i]);
-        }
+        await EnsureLoadedAsync(cancellationToken);
+        var runtime = _runtime
+            ?? throw new InvalidOperationException("LocalGemma model load did not produce a runtime.");
 
-        var lastMessage = messages[^1];
-        string userPrompt = lastMessage.Text ?? "";
-        var prompt = FormatConversation(history, userPrompt);
-
-        var inferenceParams = new InferenceParams
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages, options, cancellationToken))
         {
-            Temperature = options?.Temperature ?? _options.Temperature,
-            TopP = options?.TopP ?? _options.TopP,
-            MaxTokens = options?.MaxOutputTokens ?? 512,
-        };
-
-        await _inferenceLock.WaitAsync(cancellationToken);
-        try
-        {
-            await foreach (var token in _executor.InferAsync(prompt, inferenceParams, cancellationToken))
-            {
-                yield return new ChatResponseUpdate(ChatRole.Assistant, token);
-
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            _inferenceLock.Release();
+            yield return update;
         }
     }
 
-    /// <summary>
-    /// Completes a single chat request.
-    /// </summary>
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> chatMessages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var accumulatedText = "";
+        var accumulatedText = new StringBuilder();
 
         await foreach (var update in GetStreamingResponseAsync(chatMessages, options, cancellationToken))
         {
-            accumulatedText += update.Text;
+            accumulatedText.Append(update.Text);
         }
 
-        var message = new ChatMessage(ChatRole.Assistant, accumulatedText);
-        return new ChatResponse(message)
+        return new ChatResponse(new ChatMessage(ChatRole.Assistant, accumulatedText.ToString()))
         {
             FinishReason = ChatFinishReason.Stop,
         };
     }
 
-    /// <summary>
-    /// Asynchronously disposes the LLamaSharp resources.
-    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
-        await Task.Run(CleanupResources);
+
+        if (_runtime is not null)
+        {
+            await _runtime.DisposeAsync();
+        }
+
+        _loadLock.Dispose();
         _disposed = true;
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// Internal cleanup implementation for LLamaSharp resources.
-    /// </summary>
-    private void CleanupResources()
+    private async Task<string> ResolveModelPathAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            _context?.Dispose();
-            _inferenceLock.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error disposing LLamaContext: {ex.Message}");
-        }
+        var modelPath = _options.ModelPath;
+        var isRemoteUrl = modelPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || modelPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-        try
+        if (_modelProvider is null)
         {
-            _weights?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error disposing LLamaWeights: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Formats conversation history and current prompt for the Gemma model.
-    /// </summary>
-    private static string FormatConversation(IEnumerable<ChatMessage> history, string currentPrompt)
-    {
-        var sb = new System.Text.StringBuilder();
-
-        foreach (var msg in history)
-        {
-            if (msg.Role == ChatRole.User)
+            if (!File.Exists(modelPath))
             {
-                sb.Append("User: ");
-            }
-            else if (msg.Role == ChatRole.Assistant)
-            {
-                sb.Append("Assistant: ");
+                throw new InvalidOperationException(
+                    $"LocalGemma model file not found: '{modelPath}'. Configure LlmGateway:LocalInference:ModelPath to a local Gemma GGUF file or a Hugging Face GGUF URL.");
             }
 
-            sb.AppendLine(msg.Text ?? "");
+            var fullPath = Path.GetFullPath(modelPath);
+            if (_logger is not null) LocalModelLog.Resolve(_logger, modelPath, fullPath);
+            return fullPath;
         }
 
-        sb.Append("User: ");
-        sb.AppendLine(currentPrompt);
-        sb.Append("Assistant: ");
+        if (isRemoteUrl)
+        {
+            var cached = await _modelProvider.GetCachedModelPathAsync(modelPath);
+            if (cached is not null)
+            {
+                if (_logger is not null) LocalModelLog.CacheHit(_logger, modelPath, cached);
+                return cached;
+            }
 
-        return sb.ToString();
+            if (_logger is not null) LocalModelLog.DownloadStart(_logger, modelPath, _options.CacheDirectory);
+            var stopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                var downloaded = await _modelProvider.EnsureModelAvailableAsync(modelPath, cancellationToken);
+                stopwatch.Stop();
+                if (_logger is not null) LocalModelLog.DownloadReady(_logger, modelPath, downloaded, stopwatch.ElapsedMilliseconds);
+                return downloaded;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                if (_logger is not null) LocalModelLog.DownloadFail(_logger, modelPath, ex);
+                throw;
+            }
+        }
+
+        var resolved = await _modelProvider.EnsureModelAvailableAsync(modelPath, cancellationToken);
+        if (_logger is not null) LocalModelLog.Resolve(_logger, modelPath, resolved);
+        return resolved;
     }
+
+    private static Func<LocalInferenceOptions, string, ILocalGemmaRuntime> DefaultRuntimeFactory(ILogger<LocalGemmaChatClient>? logger)
+        => (options, resolvedModelPath) => new LmKitLocalGemmaRuntime(options, resolvedModelPath, logger);
 }
 
-/// <summary>
-/// Internal no-op chat client with custom metadata for LocalGemmaChatClient.
-/// </summary>
 internal sealed class NoOpChatClientWithMetadata : IChatClient
 {
     public ChatClientMetadata Metadata => new();
@@ -243,8 +223,7 @@ internal sealed class NoOpChatClientWithMetadata : IChatClient
         CancellationToken cancellationToken = default)
     {
         await Task.Yield();
-        var message = new ChatMessage(ChatRole.Assistant, "");
-        return new ChatResponse(message)
+        return new ChatResponse(new ChatMessage(ChatRole.Assistant, ""))
         {
             ModelId = "gemma-local",
             FinishReason = ChatFinishReason.Stop,
@@ -253,5 +232,7 @@ internal sealed class NoOpChatClientWithMetadata : IChatClient
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

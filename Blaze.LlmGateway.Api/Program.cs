@@ -4,6 +4,8 @@ using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
 using Blaze.LlmGateway.LocalInference;
+using Microsoft.Agents.AI.DevUI;
+using Microsoft.Agents.AI.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
@@ -52,11 +54,17 @@ builder.Services.AddSingleton<ModelAvailabilityRegistry>();
 builder.Services.AddSingleton<IModelAvailabilityRegistry>(sp => sp.GetRequiredService<ModelAvailabilityRegistry>());
 builder.Services.AddHostedService<ModelAvailabilityHeartbeatService>();
 builder.Services.AddSingleton<IModelCatalog, ModelCatalogService>();
+builder.Services.AddSingleton<IProtocolStore>(_ =>
+{
+    var configuredPath = builder.Configuration["LlmGateway:ProtocolStore:Path"];
+    var path = string.IsNullOrWhiteSpace(configuredPath)
+        ? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "protocol-store.json")
+        : configuredPath;
+    return new JsonProtocolStore(path);
+});
 
-// Phase 1: Local inference - availability tracking, remote discovery, and health management
-#pragma warning disable CS0618
-builder.Services.AddLocalInferenceServices(builder.Configuration);
-#pragma warning restore CS0618
+// Phase 1: Provider-backed local inference for offline-first codebrewRouter flow.
+builder.Services.AddCodebrewRouterLocalProvider(builder.Configuration);
 
 // ============================================================================
 // EXAMPLE: Three ways to register CodebrewRouterProvider
@@ -136,6 +144,27 @@ builder.Services.AddHealthChecks()
 // Keyed provider clients + routing pipeline (MCP disabled for now)
 builder.Services.AddLlmProviders();
 builder.Services.AddLlmInfrastructure();
+
+// Microsoft Agent Framework / DevUI services. CodebrewRouter keeps its custom
+// OpenAI-compatible endpoints, while DevUI uses the framework service plane.
+builder.Services.AddOpenAIResponses();
+builder.Services.AddOpenAIConversations();
+builder.Services.AddDevUI();
+builder.Services.AddAIAgent(
+        "codebrewRouter",
+        "General CodebrewRouter agent backed by the configured IChatClient pipeline.",
+        ServiceLifetime.Singleton)
+    .WithInMemorySessionStore();
+builder.Services.AddAIAgent(
+        "codebrewSharpClient",
+        "C# and .NET specialist agent backed by CodebrewRouter.",
+        ServiceLifetime.Singleton)
+    .WithInMemorySessionStore();
+builder.Services.AddAIAgent(
+        "yardly",
+        "Plant identification, disease, and care assistant backed by CodebrewRouter.",
+        ServiceLifetime.Singleton)
+    .WithInMemorySessionStore();
 
 // Configure OpenAPI
 builder.Services.AddOpenApi();
@@ -280,6 +309,12 @@ startupLogger.LogInformation("  ├─ Scalar available at /scalar");
 
 // Register LiteLLM-compatible endpoints  
 app.RegisterLiteLlmEndpoints();
+
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("LlmGateway:DevUi:Enabled", false))
+{
+    app.MapDevUI();
+    startupLogger.LogInformation("  ├─ Agent Framework DevUI available at /devui");
+}
 
 app.MapDefaultEndpoints();
 startupLogger.LogInformation("  ├─ Health checks endpoint available at /health (Aspire readiness probes)");

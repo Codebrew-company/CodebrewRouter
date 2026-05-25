@@ -1,7 +1,12 @@
 namespace Blaze.LlmGateway.Tests.Infrastructure;
 
+using Blaze.LlmGateway.Core.Configuration;
+using Blaze.LlmGateway.Core.ModelCatalog;
+using Blaze.LlmGateway.Infrastructure;
 using Blaze.LlmGateway.Core.Provider;
+using Blaze.LlmGateway.Core.TaskRouting;
 using Blaze.LlmGateway.Infrastructure.Provider;
+using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Blaze.LlmGateway.LocalInference;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -126,5 +131,32 @@ public class ServiceCollectionExtensionsTests
         Assert.NotNull(builder2);
         Assert.IsAssignableFrom<ICodebrewRouterProviderBuilder>(builder1);
         Assert.IsAssignableFrom<ICodebrewRouterProviderBuilder>(builder2);
+    }
+
+    [Fact]
+    public void AddLlmInfrastructure_WhenTaskClassificationDisabled_RegistersKeywordClassifier()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IModelAvailabilityRegistry, AlwaysAvailableRegistry>();
+        services.Configure<LlmGatewayOptions>(options =>
+        {
+            options.TaskClassification.Enabled = false;
+        });
+
+        services.AddLlmInfrastructure();
+        var sp = services.BuildServiceProvider();
+
+        var classifier = sp.GetRequiredService<ITaskClassifier>();
+
+        Assert.IsType<KeywordTaskClassifier>(classifier);
+    }
+
+    private sealed class AlwaysAvailableRegistry : IModelAvailabilityRegistry
+    {
+        public IReadOnlyList<AvailableModel> GetModels(bool includeUnavailable = false) => [];
+        public AvailableModel? FindModel(string modelId, bool includeUnavailable = false) => null;
+        public bool IsProviderAvailable(string provider) => true;
+        public string? GetProviderError(string provider) => null;
     }
 }

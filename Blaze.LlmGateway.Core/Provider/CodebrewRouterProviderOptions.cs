@@ -62,6 +62,36 @@ public class CodebrewRouterProviderOptions
     public int HealthCheckEventTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
+    /// Local GGUF file path or remote URL for the local Gemma model.
+    /// </summary>
+    public string LocalModelPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Directory used when <see cref="LocalModelPath"/> is a remote URL and must be cached.
+    /// </summary>
+    public string CacheDirectory { get; set; } = ".llm-cache";
+
+    /// <summary>
+    /// Friendly local profile name for diagnostics and model catalog entries.
+    /// </summary>
+    public string LocalModelProfile { get; set; } = "gemma-4-e4b-it";
+
+    /// <summary>
+    /// Maximum local context window passed to LLamaSharp.
+    /// </summary>
+    public int LocalMaxContextTokens { get; set; } = 8192;
+
+    /// <summary>
+    /// CPU thread count. Zero means LLamaSharp default selection.
+    /// </summary>
+    public int LocalThreadCount { get; set; } = 0;
+
+    /// <summary>
+    /// Number of model layers to offload to GPU. Zero keeps CPU-only behavior.
+    /// </summary>
+    public int LocalGpuLayerCount { get; set; } = 0;
+
+    /// <summary>
     /// Test mode: skip health check subscriptions and initialization.
     /// Default: false (production mode).
     /// </summary>

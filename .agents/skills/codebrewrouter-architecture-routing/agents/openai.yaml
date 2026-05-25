@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodebrewRouter Architecture Routing"
+  short_description: "Route and MEAI pipeline guidance"
+  default_prompt: "Use $codebrewrouter-architecture-routing to review a CodebrewRouter routing or MEAI pipeline change."

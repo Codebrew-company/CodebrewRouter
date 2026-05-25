@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodebrewRouter Codebase Onboarding"
+  short_description: "Map and explain this repository"
+  default_prompt: "Use $codebrewrouter-codebase-onboarding to map the CodebrewRouter repository for a new task."

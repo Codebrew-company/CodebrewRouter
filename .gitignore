@@ -391,6 +391,12 @@ FodyWeavers.xsd
 # Blaze.LlmGateway — Git worktrees (isolated development environments)
 .worktrees/
 
+# Blaze.LlmGateway — local GGUF model cache/downloads
+.llm-cache/
+**/.llm-cache/
+*.gguf
+*.gguf.tmp
+
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
 .squad/log/

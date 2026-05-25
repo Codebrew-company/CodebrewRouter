@@ -360,6 +360,12 @@ public static class InfrastructureServiceExtensions
         // Task classifier: Ollama-backed with keyword fallback (zero-latency on Ollama outage)
         services.AddSingleton<ITaskClassifier>(sp =>
         {
+            var classificationOptions = sp.GetRequiredService<IOptions<TaskClassificationOptions>>().Value;
+            if (!classificationOptions.Enabled)
+            {
+                return new KeywordTaskClassifier(sp.GetRequiredService<ILogger<KeywordTaskClassifier>>());
+            }
+
             var ollamaRouter = sp.GetKeyedService<IChatClient>("OllamaRouter");
             if (ollamaRouter is not null)
             {
