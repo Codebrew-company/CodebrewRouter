@@ -24,7 +24,7 @@ jobs:
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          # Label overrides: review:deep, review:medium
+          # Label overrides: review:deep, review:medium, review:quick
           if echo "$PR_LABELS" | grep -q "review:deep"; then
             echo "model=gpt-5.4" >> "$GITHUB_OUTPUT"
             echo "tier=DEEP" >> "$GITHUB_OUTPUT"
@@ -32,7 +32,7 @@ jobs:
             echo "model=Kimi-K2.6" >> "$GITHUB_OUTPUT"
             echo "tier=MEDIUM" >> "$GITHUB_OUTPUT"
           else
-            # Default: Quick check with DeepSeek-V4-Pro
+            # Default / review:quick — DeepSeek-V4-Pro
             echo "model=DeepSeek-V4-Pro" >> "$GITHUB_OUTPUT"
             echo "tier=QUICK" >> "$GITHUB_OUTPUT"
           fi
