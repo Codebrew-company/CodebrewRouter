@@ -115,7 +115,8 @@ public record ChatContentPart(
     string? Detail = null,
     string? MediaType = null,
     string? FileId = null,
-    string? FileName = null);
+    string? FileName = null,
+    string? VideoUrl = null);  // NEW
 
 /// <summary>Tool call emitted by an assistant message.</summary>
 public record ToolCallDto(

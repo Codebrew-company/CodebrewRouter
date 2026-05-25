@@ -154,6 +154,33 @@ internal static class OpenAiProtocolMapper
                         }
                     }
                     break;
+
+                case "video_url":
+                    if (part.TryGetProperty("video_url", out var videoUrlElement))
+                    {
+                        var url = videoUrlElement.ValueKind == JsonValueKind.Object
+                            ? videoUrlElement.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null
+                            : videoUrlElement.GetString();
+
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            var mediaType = part.TryGetProperty("media_type", out var mt) ? mt.GetString() : null;
+                            contents.Add(ToVideoContent(url, mediaType));
+                        }
+                    }
+                    break;
+
+                case "input_video":
+                    if (part.TryGetProperty("video_url", out var inputVideoUrl))
+                    {
+                        var url = inputVideoUrl.GetString();
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            var mediaType = part.TryGetProperty("media_type", out var mt) ? mt.GetString() : null;
+                            contents.Add(ToVideoContent(url, mediaType));
+                        }
+                    }
+                    break;
             }
         }
 
@@ -169,6 +196,17 @@ internal static class OpenAiProtocolMapper
         return imageUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
             ? new DataContent(new Uri(imageUrl), resolvedMediaType)
             : new UriContent(new Uri(imageUrl), resolvedMediaType);
+    }
+
+    private static AIContent ToVideoContent(string videoUrl, string? mediaType)
+    {
+        var resolvedMediaType = string.IsNullOrWhiteSpace(mediaType)
+            ? InferMediaType(videoUrl)
+            : mediaType;
+
+        return videoUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            ? new DataContent(new Uri(videoUrl), resolvedMediaType)
+            : new UriContent(new Uri(videoUrl), resolvedMediaType);
     }
 
     private static string InferMediaType(string uri)
@@ -189,6 +227,11 @@ internal static class OpenAiProtocolMapper
             ".gif" => "image/gif",
             ".webp" => "image/webp",
             ".bmp" => "image/bmp",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".avi" => "video/x-msvideo",
+            ".mkv" => "video/x-matroska",
             _ => "image/*"
         };
     }
@@ -312,19 +355,19 @@ internal static class OpenAiProtocolMapper
 
         foreach (var message in output.Count == 0 ? completion.Messages ?? [] : [])
         {
-            var imageParts = message.Contents
+            var mediaParts = message.Contents
                 .OfType<DataContent>()
                 .Select(dc => new ResponseContentPart(
-                    Type: "output_image",
+                    Type: dc.MediaType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true ? "output_video" : "output_image",
                     ImageUrl: dc.Uri?.ToString()))
                 .Concat(message.Contents
                     .OfType<UriContent>()
                     .Select(uc => new ResponseContentPart(
-                        Type: "output_image",
+                        Type: uc.MediaType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true ? "output_video" : "output_image",
                         ImageUrl: uc.Uri?.ToString())))
                 .ToList();
 
-            if (!string.IsNullOrEmpty(message.Text) || imageParts.Count > 0)
+            if (!string.IsNullOrEmpty(message.Text) || mediaParts.Count > 0)
             {
                 var contentParts = new List<ResponseContentPart>();
                 if (!string.IsNullOrEmpty(message.Text))
@@ -333,7 +376,7 @@ internal static class OpenAiProtocolMapper
                         Type: "output_text",
                         Text: message.Text));
                 }
-                contentParts.AddRange(imageParts);
+                contentParts.AddRange(mediaParts);
 
                 output.Add(new ResponseOutputItem(
                     Id: Ids.New("msg"),
@@ -445,16 +488,16 @@ internal static class OpenAiProtocolMapper
         var text = message.Text;
         var imageParts = message.Contents
             .OfType<DataContent>()
-            .Select(dc => dc.Uri?.ToString())
+            .Select(dc => (uri: dc.Uri?.ToString(), isVideo: dc.MediaType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true))
             .Concat(message.Contents
                 .OfType<UriContent>()
-                .Select(uc => uc.Uri?.ToString()))
-            .Where(uri => !string.IsNullOrWhiteSpace(uri))
+                .Select(uc => (uri: uc.Uri?.ToString(), isVideo: uc.MediaType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true)))
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.uri))
             .ToList();
 
         var content = imageParts.Count > 0
             ? string.Join("\n", new[] { text ?? string.Empty }
-                .Concat(imageParts.Select(uri => $"![image]({uri})"))
+                .Concat(imageParts.Select(pair => pair.isVideo ? $"![video]({pair.uri})" : $"![image]({pair.uri})"))
                 .Where(static s => !string.IsNullOrWhiteSpace(s)))
             : text;
 
@@ -476,8 +519,11 @@ internal static class OpenAiProtocolMapper
             var imageParts = item.Content
                 .Where(content => content.Type == "output_image" && !string.IsNullOrWhiteSpace(content.ImageUrl))
                 .Select(content => $"![image]({content.ImageUrl})");
+            var videoParts = item.Content
+                .Where(content => content.Type == "output_video" && !string.IsNullOrWhiteSpace(content.ImageUrl))
+                .Select(content => $"![video]({content.ImageUrl})");
 
-            var combined = string.Join("\n", textParts.Concat(imageParts));
+            var combined = string.Join("\n", textParts.Concat(imageParts).Concat(videoParts));
             return new(
                 Type: item.Type,
                 Role: item.Role,

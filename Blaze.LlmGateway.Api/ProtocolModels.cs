@@ -269,7 +269,8 @@ public sealed record ResponseOutputItem(
 public sealed record ResponseContentPart(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("text")] string? Text = null,
-    [property: JsonPropertyName("image_url")] string? ImageUrl = null);
+    [property: JsonPropertyName("image_url")] string? ImageUrl = null,
+    [property: JsonPropertyName("video_url")] string? VideoUrl = null);
 
 public sealed record ResponseInputItemsList(
     [property: JsonPropertyName("object")] string Object,
