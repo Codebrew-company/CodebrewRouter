@@ -396,6 +396,22 @@ public sealed class CodebrewRouterChatClient(
         var tokenCount = tokenCounter.CountTokens(messages);
         var taskType = await taskClassifier.ClassifyAsync(messages, cancellationToken);
 
+        // Vision-aware content inspection: if the classifier returned General
+        // but messages contain image or video content, reclassify as VisionObjectDetection.
+        if (taskType == TaskType.General)
+        {
+            var hasVisualMedia = messages.Any(m => m.Contents?.Any(c =>
+                (c is DataContent dc && dc.MediaType is not null &&
+                 (dc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
+                  dc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))) ||
+                (c is UriContent uc && uc.MediaType is not null &&
+                 (uc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
+                  uc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)))) == true);
+
+            if (hasVisualMedia)
+                taskType = TaskType.VisionObjectDetection;
+        }
+
         var typeKey = taskType.ToString();
         var providers =
             activeOptions.FallbackRules.TryGetValue(typeKey, out var chain) && chain.Length > 0 ? chain

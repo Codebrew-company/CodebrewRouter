@@ -57,6 +57,132 @@ public sealed class ProtocolMvpTests
     }
 
     [Fact]
+    public async Task ChatCompletions_PreservesContentPartArraysIncludingVideo()
+    {
+        var request = JsonSerializer.Deserialize<ChatCompletionRequest>(
+            """
+            {
+              "model": "yardly",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    { "type": "text", "text": "What is happening in this video?" },
+                    { "type": "video_url", "video_url": { "url": "https://example.com/video.mp4" } },
+                    { "type": "input_video", "video_url": "data:video/mp4;base64,cGxhY2Vob2xkZXI=" }
+                  ]
+                }
+              ]
+            }
+            """,
+            JsonOptions)!;
+
+        var chatClient = new CapturingChatClient();
+        var httpContext = CreateHttpContext();
+
+        await ChatCompletionsEndpoint.HandleAsync(
+            request,
+            chatClient,
+            new FixedModelSelectionResolver(null),
+            Options.Create(new LlmGatewayOptions()),
+            httpContext,
+            CancellationToken.None);
+
+        chatClient.Messages.Should().ContainSingle();
+        var contents = chatClient.Messages[0].Contents;
+        contents.OfType<TextContent>().Should().ContainSingle().Which.Text.Should().Be("What is happening in this video?");
+        contents.OfType<UriContent>().Should().ContainSingle().Which.Uri.Should().Be(new Uri("https://example.com/video.mp4"));
+        contents.OfType<DataContent>().Should().ContainSingle().Which.MediaType.Should().Be("video/mp4");
+    }
+
+    [Fact]
+    public async Task ChatCompletions_PreservesContentPartArraysIncludingVideo_MimeTypeInference()
+    {
+        var request = JsonSerializer.Deserialize<ChatCompletionRequest>(
+            """
+            {
+              "model": "yardly",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    { "type": "video_url", "video_url": { "url": "https://example.com/video.webm", "detail": "high" } },
+                    { "type": "video_url", "video_url": "https://example.com/clip.mov" },
+                    { "type": "video_url", "video_url": { "url": "https://example.com/animation.avi" } },
+                    { "type": "video_url", "video_url": { "url": "https://example.com/footage.mkv" } }
+                  ]
+                }
+              ]
+            }
+            """,
+            JsonOptions)!;
+
+        var chatClient = new CapturingChatClient();
+        var httpContext = CreateHttpContext();
+
+        await ChatCompletionsEndpoint.HandleAsync(
+            request,
+            chatClient,
+            new FixedModelSelectionResolver(null),
+            Options.Create(new LlmGatewayOptions()),
+            httpContext,
+            CancellationToken.None);
+
+        chatClient.Messages.Should().ContainSingle();
+        var contents = chatClient.Messages[0].Contents.OfType<UriContent>().ToList();
+        contents.Should().HaveCount(4);
+        contents[0].MediaType.Should().Be("video/webm");
+        contents[1].MediaType.Should().Be("video/quicktime");
+        contents[2].MediaType.Should().Be("video/x-msvideo");
+        contents[3].MediaType.Should().Be("video/x-matroska");
+    }
+
+    [Fact]
+    public async Task ResponsesApi_AcceptsVideoInput()
+    {
+        var request = JsonSerializer.Deserialize<CreateResponseRequest>(
+            """
+            {
+              "model": "codebrewRouter",
+              "input": [
+                {
+                  "role": "user",
+                  "content": [
+                    { "type": "text", "text": "Describe this video clip" },
+                    { "type": "video_url", "video_url": "https://example.com/clip.mp4" },
+                    { "type": "input_video", "video_url": "data:video/webm;base64,dmlkZW8=" }
+                  ]
+                }
+              ]
+            }
+            """,
+            JsonOptions)!;
+
+        var store = new InMemoryProtocolStore();
+        var chatClient = new CapturingChatClient(
+            new ChatResponse(new ChatMessage(ChatRole.Assistant, "I see a video clip.")));
+
+        var result = await ResponsesEndpoint.CreateAsync(
+            request,
+            chatClient,
+            new FixedModelSelectionResolver(null),
+            Options.Create(new LlmGatewayOptions()),
+            store,
+            CreateHttpContext(),
+            CancellationToken.None);
+
+        var response = result.Should().BeOfType<ResponseObject>().Subject;
+        response.OutputText.Should().Be("I see a video clip.");
+
+        var userMessages = chatClient.Messages.Where(m => m.Role == ChatRole.User).ToList();
+        userMessages.Should().ContainSingle();
+        var contents = userMessages[0].Contents;
+        contents.OfType<TextContent>().Should().ContainSingle().Which.Text.Should().Be("Describe this video clip");
+        contents.OfType<UriContent>().Should().ContainSingle().Which.Uri.Should().Be(new Uri("https://example.com/clip.mp4"));
+        contents.OfType<DataContent>().Should().ContainSingle().Which.MediaType.Should().Be("video/webm");
+    }
+
+    [Fact]
     public async Task ChatCompletions_StreamingSerializesToolCallDeltas()
     {
         var request = JsonSerializer.Deserialize<ChatCompletionRequest>(

@@ -115,7 +115,8 @@ public record ChatContentPart(
     string? Detail = null,
     string? MediaType = null,
     string? FileId = null,
-    string? FileName = null);
+    string? FileName = null,
+    string? VideoUrl = null);  // NEW
 
 /// <summary>Tool call emitted by an assistant message.</summary>
 public record ToolCallDto(
@@ -285,7 +286,8 @@ public record ModelDiagnosticsInfo(
     string? Endpoint,
     bool Enabled,
     string? ErrorMessage,
-    DateTimeOffset? LastCheckedUtc);
+    DateTimeOffset? LastCheckedUtc,
+    bool? SupportsVision = null);
 
 /// <summary>Connectivity diagnostics for a provider.</summary>
 public record ProviderDiagnosticsInfo(
@@ -326,7 +328,8 @@ public record CodebrewRouterBackingModel(
     string? OwnedBy = null,
     string? Source = null,
     bool Enabled = true,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool? SupportsVision = null);
 
 /// <summary>Ordered provider chain used by CodebrewRouter for a classified task type.</summary>
 public record CodebrewRouterFallbackRule(
