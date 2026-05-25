@@ -119,13 +119,25 @@ public static class ResponsesEndpoint
                 continue;
             }
 
-            foreach (var content in item.Content.Where(static content => !string.IsNullOrEmpty(content.Text)))
+            foreach (var content in item.Content.Where(static content => !string.IsNullOrEmpty(content.Text) || !string.IsNullOrWhiteSpace(content.ImageUrl)))
             {
-                await WriteEventAsync(
-                    httpContext,
-                    "response.output_text.delta",
-                    new { type = "response.output_text.delta", response_id = response.Id, item_id = item.Id, delta = content.Text },
-                    cancellationToken);
+                if (!string.IsNullOrEmpty(content.Text))
+                {
+                    await WriteEventAsync(
+                        httpContext,
+                        "response.output_text.delta",
+                        new { type = "response.output_text.delta", response_id = response.Id, item_id = item.Id, delta = content.Text },
+                        cancellationToken);
+                }
+
+                if (!string.IsNullOrWhiteSpace(content.ImageUrl))
+                {
+                    await WriteEventAsync(
+                        httpContext,
+                        "response.output_image.delta",
+                        new { type = "response.output_image.delta", response_id = response.Id, item_id = item.Id, delta = content.ImageUrl },
+                        cancellationToken);
+                }
             }
         }
 

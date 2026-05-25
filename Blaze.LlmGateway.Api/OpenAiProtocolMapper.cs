@@ -70,16 +70,127 @@ internal static class OpenAiProtocolMapper
             var role = item.TryGetProperty("role", out var roleElement)
                 ? roleElement.GetString()
                 : "user";
-            var content = ExtractText(item.TryGetProperty("content", out var contentElement)
-                ? contentElement
-                : item);
 
-            messages.Add(new ChatMessage(ToChatRole(role), content));
+            if (!item.TryGetProperty("content", out var contentElement))
+            {
+                messages.Add(new ChatMessage(ToChatRole(role), item.GetRawText()));
+                continue;
+            }
+
+            var contents = ParseContentParts(contentElement);
+            messages.Add(new ChatMessage(ToChatRole(role), contents));
         }
 
         return messages.Count == 0
             ? [new ChatMessage(ChatRole.User, input.GetRawText())]
             : messages;
+    }
+
+    private static List<AIContent> ParseContentParts(JsonElement element)
+    {
+        var contents = new List<AIContent>();
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            contents.Add(new TextContent(element.GetString() ?? string.Empty));
+            return contents;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            contents.Add(new TextContent(element.GetRawText()));
+            return contents;
+        }
+
+        foreach (var part in element.EnumerateArray())
+        {
+            if (part.ValueKind == JsonValueKind.String)
+            {
+                contents.Add(new TextContent(part.GetString() ?? string.Empty));
+                continue;
+            }
+
+            if (part.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var type = part.TryGetProperty("type", out var typeElement)
+                ? typeElement.GetString()
+                : null;
+
+            switch (type)
+            {
+                case "text":
+                    if (part.TryGetProperty("text", out var textValue) && textValue.ValueKind == JsonValueKind.String)
+                    {
+                        contents.Add(new TextContent(textValue.GetString() ?? string.Empty));
+                    }
+                    break;
+
+                case "image_url":
+                    if (part.TryGetProperty("image_url", out var imageUrlElement))
+                    {
+                        var url = imageUrlElement.ValueKind == JsonValueKind.Object
+                            ? imageUrlElement.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null
+                            : imageUrlElement.GetString();
+
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            var mediaType = part.TryGetProperty("media_type", out var mt) ? mt.GetString() : null;
+                            contents.Add(ToImageContent(url, mediaType));
+                        }
+                    }
+                    break;
+
+                case "input_image":
+                    if (part.TryGetProperty("image_url", out var inputImageUrl))
+                    {
+                        var url = inputImageUrl.GetString();
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            var mediaType = part.TryGetProperty("media_type", out var mt) ? mt.GetString() : null;
+                            contents.Add(ToImageContent(url, mediaType));
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return contents;
+    }
+
+    private static AIContent ToImageContent(string imageUrl, string? mediaType)
+    {
+        var resolvedMediaType = string.IsNullOrWhiteSpace(mediaType)
+            ? InferMediaType(imageUrl)
+            : mediaType;
+
+        return imageUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            ? new DataContent(new Uri(imageUrl), resolvedMediaType)
+            : new UriContent(new Uri(imageUrl), resolvedMediaType);
+    }
+
+    private static string InferMediaType(string uri)
+    {
+        if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var separator = uri.IndexOf(';');
+            return separator > "data:".Length
+                ? uri["data:".Length..separator]
+                : "application/octet-stream";
+        }
+
+        var withoutQuery = uri.Split('?', '#')[0];
+        return Path.GetExtension(withoutQuery).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            _ => "image/*"
+        };
     }
 
     public static List<ChatMessage> ApplyInstructions(
@@ -201,19 +312,35 @@ internal static class OpenAiProtocolMapper
 
         foreach (var message in output.Count == 0 ? completion.Messages ?? [] : [])
         {
-            if (!string.IsNullOrEmpty(message.Text))
+            var imageParts = message.Contents
+                .OfType<DataContent>()
+                .Select(dc => new ResponseContentPart(
+                    Type: "output_image",
+                    ImageUrl: dc.Uri?.ToString()))
+                .Concat(message.Contents
+                    .OfType<UriContent>()
+                    .Select(uc => new ResponseContentPart(
+                        Type: "output_image",
+                        ImageUrl: uc.Uri?.ToString())))
+                .ToList();
+
+            if (!string.IsNullOrEmpty(message.Text) || imageParts.Count > 0)
             {
+                var contentParts = new List<ResponseContentPart>();
+                if (!string.IsNullOrEmpty(message.Text))
+                {
+                    contentParts.Add(new ResponseContentPart(
+                        Type: "output_text",
+                        Text: message.Text));
+                }
+                contentParts.AddRange(imageParts);
+
                 output.Add(new ResponseOutputItem(
                     Id: Ids.New("msg"),
                     Type: "message",
                     Status: "completed",
                     Role: ResolveOpenAiRole(message.Role),
-                    Content:
-                    [
-                        new ResponseContentPart(
-                            Type: "output_text",
-                            Text: message.Text)
-                    ]));
+                    Content: contentParts));
             }
 
             foreach (var toolCall in message.Contents.OfType<FunctionCallContent>())
@@ -314,22 +441,58 @@ internal static class OpenAiProtocolMapper
     }
 
     public static ConversationItem ToConversationItem(ChatMessage message)
-        => new(
+    {
+        var text = message.Text;
+        var imageParts = message.Contents
+            .OfType<DataContent>()
+            .Select(dc => dc.Uri?.ToString())
+            .Concat(message.Contents
+                .OfType<UriContent>()
+                .Select(uc => uc.Uri?.ToString()))
+            .Where(uri => !string.IsNullOrWhiteSpace(uri))
+            .ToList();
+
+        var content = imageParts.Count > 0
+            ? string.Join("\n", new[] { text ?? string.Empty }
+                .Concat(imageParts.Select(uri => $"![image]({uri})"))
+                .Where(static s => !string.IsNullOrWhiteSpace(s)))
+            : text;
+
+        return new(
             Type: "message",
             Role: ResolveOpenAiRole(message.Role),
-            Content: message.Text,
+            Content: content,
             Id: Ids.New("msg"),
             CreatedAt: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    }
 
     public static ConversationItem ToConversationItem(ResponseOutputItem item)
-        => new(
+    {
+        if (item.Content is { Count: > 0 })
+        {
+            var textParts = item.Content
+                .Select(content => content.Text)
+                .Where(static text => !string.IsNullOrWhiteSpace(text));
+            var imageParts = item.Content
+                .Where(content => content.Type == "output_image" && !string.IsNullOrWhiteSpace(content.ImageUrl))
+                .Select(content => $"![image]({content.ImageUrl})");
+
+            var combined = string.Join("\n", textParts.Concat(imageParts));
+            return new(
+                Type: item.Type,
+                Role: item.Role,
+                Content: combined,
+                Id: item.Id,
+                CreatedAt: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        }
+
+        return new(
             Type: item.Type,
             Role: item.Role,
-            Content: item.Content is { Count: > 0 }
-                ? string.Join("\n", item.Content.Select(content => content.Text).Where(static text => !string.IsNullOrWhiteSpace(text)))
-                : item.Output ?? item.Arguments,
+            Content: item.Output ?? item.Arguments,
             Id: item.Id,
             CreatedAt: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    }
 
     private static ChatRole ToChatRole(string? role)
         => role?.ToLowerInvariant() switch
