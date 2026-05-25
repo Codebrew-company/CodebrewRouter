@@ -1,0 +1,42 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  ai-review:
+    # Only run on the self-hosted runner where LLM access is available
+    runs-on: [self-hosted, linux, x64, hermes]
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for accurate diff against base
+
+      - name: Run AI Code Review
+        id: review
+        env:
+          AZURE_FOUNDRY_KEY: ${{ secrets.AZURE_FOUNDRY_KEY }}
+          AZURE_DEPLOYMENT: ${{ secrets.AZURE_DEPLOYMENT || 'DeepSeek-V4-Pro' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 .github/scripts/code-review.py
+
+      - name: Post Review to PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EVENT=$(cat /tmp/review_event.txt)
+          BODY=$(cat /tmp/review_body.md)
+          gh pr review ${{ github.event.pull_request.number }} \
+            $EVENT \
+            --body "$BODY"
