@@ -12,17 +12,13 @@ import sys
 import urllib.request
 
 # ── Config ──────────────────────────────────────────────────────────────────
-AZURE_RESOURCE = "codebrew-resource"
-AZURE_API_VERSION = "2024-10-21"
-AZURE_KEY = os.environ.get("AZURE_FOUNDRY_KEY", "")
-AZURE_DEPLOYMENT = os.environ.get("AZURE_DEPLOYMENT", "DeepSeek-V4-Flash")
-REVIEW_TIER = os.environ.get("REVIEW_TIER", "QUICK")
-
-# Build the endpoint URL dynamically from the deployment name
-AZURE_ENDPOINT = (
-    f"https://{AZURE_RESOURCE}.openai.azure.com/openai/deployments/"
-    f"{AZURE_DEPLOYMENT}/chat/completions?api-version={AZURE_API_VERSION}"
+AZURE_ENDPOINT = os.environ.get(
+    "AZURE_FOUNDRY_ENDPOINT",
+    "https://codebrew-resource.openai.azure.com/openai/deployments/DeepSeek-V4-Pro/chat/completions?api-version=2024-10-21",
 )
+AZURE_KEY = os.environ.get("AZURE_FOUNDRY_KEY", "")
+# To switch to gpt-5.4, set AZURE_DEPLOYMENT=gpt-5.4 in env
+AZURE_DEPLOYMENT = os.environ.get("AZURE_DEPLOYMENT", "DeepSeek-V4-Pro")
 
 PR_NUMBER = os.environ.get("PR_NUMBER", "")
 BASE_REF = os.environ.get("BASE_REF", "develop")
@@ -69,66 +65,45 @@ def get_pr_context():
 
 
 def build_prompt(ctx):
-    """Build the system + user prompt for code review, tuned to review tier."""
+    """Build the system + user prompt for code review."""
     diff = ctx["diff"]
     files = ctx["files"]
     changed = ctx["changed_files"]
 
-    # Tier-specific diff limits and focus
-    tier_config = {
-        "QUICK": {
-            "max_diff": 40_000,
-            "focus": "Focus on critical bugs, security issues, and correctness problems only. Be concise — list only what needs to change.",
-            "name": "Quick Check (DeepSeek-V4-Flash)",
-        },
-        "MEDIUM": {
-            "max_diff": 80_000,
-            "focus": "Check for bugs, security, performance, code style, and test coverage. Provide inline comments for each issue.",
-            "name": "Standard Review (Kimi-K2.6)",
-        },
-        "DEEP": {
-            "max_diff": 120_000,
-            "focus": "Thorough architectural review. Check correctness, security, performance, async patterns, disposal, error handling, logging, DI registration, test coverage, and design patterns. Provide detailed inline comments with concrete fix suggestions.",
-            "name": "Deep Review (gpt-5.4)",
-        },
-    }
-    config = tier_config.get(REVIEW_TIER, tier_config["QUICK"])
-
-    # Truncate extremely large diffs
-    if len(diff) > config["max_diff"]:
-        diff = diff[: config["max_diff"]] + f"\n\n... [truncated: diff was {len(diff)} chars]"
+    # Truncate extremely large diffs to avoid token limits
+    max_diff_chars = 80_000
+    if len(diff) > max_diff_chars:
+        diff = diff[:max_diff_chars] + f"\n\n... [truncated: diff was {len(diff)} chars]"
 
     file_list = "\n".join(f"- `{f}`" for f in changed) if changed else "(none)"
 
-    system_prompt = f"""You are an expert senior software architect performing a code review. You are thorough, precise, and constructive.
-
-**Review level: {config['name']}**
-{config['focus']}
+    system_prompt = """You are an expert senior software architect performing a code review. You are thorough, precise, and constructive.
 
 Return your review as **valid JSON only** — no markdown wrapping, no explanation outside the JSON. Use this exact schema:
 
-{{
+{
   "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
   "summary": "One-paragraph overview of the review findings",
   "inline_comments": [
-    {{
+    {
       "path": "relative/file/path.cs",
       "line": 42,
       "side": "RIGHT",
       "body": "**Severity:** issue description and suggestion"
-    }}
+    }
   ]
-}}
+}
 
 Review guidelines:
 - **Critical** (security, data loss, correctness bugs) → REQUEST_CHANGES
 - **Warnings** (code smell, missing edge cases, performance) → REQUEST_CHANGES or COMMENT
 - **Suggestions** (style, minor improvements) → COMMENT
 - **All clear** → APPROVE
-- Inline comments reference the exact file path and line number from the diff
+- Inline comments should reference the exact file path and line number from the diff
 - For `side`, use "RIGHT" for additions, "LEFT" for deletions (default: "RIGHT")
-- This is a .NET/C# project targeting .NET 10 — follow modern .NET best practices
-- The project is an LLM Gateway (Blaze.LlmGateway) using Microsoft.Extensions.AI"""
+- Be specific — reference exact line numbers and suggest concrete fixes
+- Check for: security vulnerabilities, race conditions, error handling, null safety, async/await correctness, disposal patterns, logging, and test coverage
+- This is a .NET/C# project — follow .NET best practices"""
 
     user_prompt = f"""## Pull Request Review
 
@@ -151,10 +126,6 @@ Review the above changes and return JSON."""
 
 def call_llm(system_prompt, user_prompt):
     """Call Azure Foundry OpenAI-compatible endpoint."""
-    # gpt-5.4 (reasoning model) uses max_completion_tokens instead of max_tokens
-    is_reasoning = "gpt-5.4" in AZURE_DEPLOYMENT.lower()
-    max_param = "max_completion_tokens" if is_reasoning else "max_tokens"
-
     body = json.dumps({
         "model": AZURE_DEPLOYMENT,
         "messages": [
@@ -162,7 +133,7 @@ def call_llm(system_prompt, user_prompt):
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.1,
-        max_param: 4096,
+        "max_tokens": 4096,
     }).encode("utf-8")
 
     req = urllib.request.Request(
