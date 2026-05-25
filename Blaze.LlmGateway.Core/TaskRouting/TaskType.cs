@@ -17,8 +17,8 @@ public enum TaskType
 
     /// <summary>
     /// Image-based tasks: object detection, scene description, visual QA.
-    /// NOTE: current API only supports text content; routing is keyword-based until
-    /// ChatMessageDto gains image-part support.
+    /// Detected automatically when messages contain DataContent or UriContent
+    /// with image/ or video/ media types.
     /// </summary>
     VisionObjectDetection,
 

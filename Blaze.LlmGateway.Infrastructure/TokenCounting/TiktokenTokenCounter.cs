@@ -46,7 +46,8 @@ public sealed class TiktokenTokenCounter : ITokenCounter
                 count += tokenizer.CountTokens(message.Text);
             }
             
-            // Note: If images or other media types are present, they are not counted here.
+            // Estimate tokens for image and video content (DataContent and UriContent)
+            count += EstimateImageTokens(message.Contents);
         }
         
         // Add overhead for the assistant reply prime
@@ -117,6 +118,53 @@ public sealed class TiktokenTokenCounter : ITokenCounter
                     ex);
             }
         }
+    }
+
+    /// <summary>
+    /// Estimates token count for image and video content in a message.
+    /// OpenAI standard: ~170 tokens per 512x512 image tile.
+    /// Video frames are also estimated at ~170 tokens per frame.
+    /// For unknown sizes, assumes 1 tile (170 tokens).
+    /// </summary>
+    private static int EstimateImageTokens(IList<AIContent>? contents)
+    {
+        if (contents == null || contents.Count == 0)
+            return 0;
+
+        int total = 0;
+        const int tokensPerTile = 170;
+
+        foreach (var content in contents)
+        {
+            if (content is DataContent dc && dc.MediaType is not null)
+            {
+                if (dc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Heuristic: assume 1 tile for unknown size
+                    total += tokensPerTile;
+                }
+                else if (dc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Assume 1 frame for now
+                    total += tokensPerTile;
+                }
+            }
+            else if (content is UriContent uc && uc.MediaType is not null)
+            {
+                if (uc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Heuristic: assume 1 tile for unknown size
+                    total += tokensPerTile;
+                }
+                else if (uc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Assume 1 frame for now
+                    total += tokensPerTile;
+                }
+            }
+        }
+
+        return total;
     }
 
     /// <summary>
