@@ -1,8 +1,10 @@
 using Blaze.LlmGateway.Core;
+using Blaze.LlmGateway.Core.Catalog;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Core.Routing;
 using Blaze.LlmGateway.Core.TaskRouting;
+using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies;
@@ -14,6 +16,8 @@ using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OpenAI;
 using System.ClientModel;
+// Alias: existing routing strategy system (pre-catalog)
+using LegacyRoutingStrategy = Blaze.LlmGateway.Infrastructure.RoutingStrategies.IRoutingStrategy;
 
 namespace Blaze.LlmGateway.Infrastructure;
 
@@ -128,6 +132,13 @@ public static class InfrastructureServiceExtensions
 
     public static IServiceCollection AddLlmInfrastructure(this IServiceCollection services)
     {
+        // Register provider catalog (populated from config at startup)
+        services.AddSingleton<IProviderCatalog>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.ProviderCatalog;
+            return new InMemoryProviderCatalog(options);
+        });
+
         // Register thread-safe health state manager
         services.AddSingleton<IOllamaHealthState>(sp =>
         {
@@ -210,7 +221,7 @@ public static class InfrastructureServiceExtensions
             sp.GetRequiredService<ILogger<ModelSelectionResolver>>(),
             sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>()));
         services.AddSingleton<KeywordRoutingStrategy>();
-        services.AddSingleton<IRoutingStrategy>(sp =>
+        services.AddSingleton<LegacyRoutingStrategy>(sp =>
         {
             var keywordFallback = sp.GetRequiredService<KeywordRoutingStrategy>();
             var logger = sp.GetRequiredService<ILogger<OllamaMetaRoutingStrategy>>();
@@ -257,7 +268,7 @@ public static class InfrastructureServiceExtensions
                 GetConfiguredKeyedClient(sp, "LmStudio", HasValue(providerOptions.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
              
-            var strategy = sp.GetRequiredService<IRoutingStrategy>();
+            var strategy = sp.GetRequiredService<LegacyRoutingStrategy>();
             var failoverStrategy = sp.GetRequiredService<IFailoverStrategy>();
             var routerLogger = sp.GetRequiredService<ILogger<LlmRoutingChatClient>>();
 
