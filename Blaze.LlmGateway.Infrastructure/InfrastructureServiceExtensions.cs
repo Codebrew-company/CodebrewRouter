@@ -140,20 +140,6 @@ public static class InfrastructureServiceExtensions
             return new InMemoryProviderCatalog(options);
         });
 
-        // ── Catalog Routing Strategies ──────────────────────────────────────────
-        // Register all 5 catalog routing strategies as singletons.
-        // These use Blaze.LlmGateway.Core.Catalog.IRoutingStrategy (not the legacy one).
-        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
-            new RoundRobinStrategy(sp.GetRequiredService<IProviderCatalog>()));
-        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
-            new ShuffleStrategy(sp.GetRequiredService<IProviderCatalog>()));
-        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
-            new LatencyStrategy(sp.GetRequiredService<IProviderCatalog>()));
-        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
-            new CostStrategy(sp.GetRequiredService<IProviderCatalog>()));
-        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
-            new LeastBusyStrategy(sp.GetRequiredService<IProviderCatalog>()));
-
         // Register thread-safe health state manager
         services.AddSingleton<IOllamaHealthState>(sp =>
         {
