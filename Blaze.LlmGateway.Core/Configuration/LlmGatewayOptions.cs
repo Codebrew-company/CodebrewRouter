@@ -19,6 +19,7 @@ public class LlmGatewayOptions
     public PromptCleanupOptions PromptCleanup { get; set; } = new();
     public TaskClassificationOptions TaskClassification { get; set; } = new();
     public ContextSizingOptions ContextSizing { get; set; } = new();
+    public ProviderCatalogOptions ProviderCatalog { get; set; } = new();
 }
 
 public class ProvidersOptions
