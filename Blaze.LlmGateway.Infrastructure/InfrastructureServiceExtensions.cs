@@ -226,6 +226,15 @@ public static class InfrastructureServiceExtensions
             return (IChatClient)failoverClient;
         });
 
+        // Register catalog routing strategy resolver
+        services.AddSingleton<IRoutingStrategyResolver, RoutingStrategyResolver>();
+
+        // Register catalog model router for virtual model binding (Phase 2)
+        services.AddSingleton<CatalogModelRouter>();
+
+        // Register health probe background service (Phase 3)
+        services.AddHostedService<HealthProbeService>();
+
         services.AddSingleton<IModelSelectionResolver>(sp => new ModelSelectionResolver(
             sp,
             sp.GetRequiredService<IModelCatalog>(),
@@ -234,7 +243,8 @@ public static class InfrastructureServiceExtensions
             sp.GetRequiredService<IContextCompactor>(),
             sp.GetRequiredService<IOptions<ContextSizingOptions>>(),
             sp.GetRequiredService<ILogger<ModelSelectionResolver>>(),
-            sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>()));
+            sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>(),
+            catalogModelRouter: sp.GetService<CatalogModelRouter>()));
         services.AddSingleton<KeywordRoutingStrategy>();
         services.AddSingleton<LegacyRoutingStrategy>(sp =>
         {
