@@ -15,7 +15,7 @@ import urllib.request
 AZURE_RESOURCE = "codebrew-resource"
 AZURE_API_VERSION = "2024-10-21"
 AZURE_KEY = os.environ.get("AZURE_FOUNDRY_KEY", "")
-AZURE_DEPLOYMENT = os.environ.get("AZURE_DEPLOYMENT", "DeepSeek-V4-Pro")
+AZURE_DEPLOYMENT = os.environ.get("AZURE_DEPLOYMENT", "DeepSeek-V4-Flash")
 REVIEW_TIER = os.environ.get("REVIEW_TIER", "QUICK")
 
 # Build the endpoint URL dynamically from the deployment name
@@ -79,7 +79,7 @@ def build_prompt(ctx):
         "QUICK": {
             "max_diff": 40_000,
             "focus": "Focus on critical bugs, security issues, and correctness problems only. Be concise — list only what needs to change.",
-            "name": "Quick Check (DeepSeek-V4-Pro)",
+            "name": "Quick Check (DeepSeek-V4-Flash)",
         },
         "MEDIUM": {
             "max_diff": 80_000,

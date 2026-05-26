@@ -32,8 +32,8 @@ jobs:
             echo "model=Kimi-K2.6" >> "$GITHUB_OUTPUT"
             echo "tier=MEDIUM" >> "$GITHUB_OUTPUT"
           else
-            # Default / review:quick — DeepSeek-V4-Pro
-            echo "model=DeepSeek-V4-Pro" >> "$GITHUB_OUTPUT"
+            # Default / review:quick — DeepSeek-V4-Flash
+            echo "model=DeepSeek-V4-Flash" >> "$GITHUB_OUTPUT"
             echo "tier=QUICK" >> "$GITHUB_OUTPUT"
           fi
 
