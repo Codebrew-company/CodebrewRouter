@@ -79,20 +79,21 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
         ThrowIfUnhealthy();
 
         var sw = Stopwatch.StartNew();
-        var enumerator = InnerClient.GetStreamingResponseAsync(chatMessages, options, cancellationToken)
+
+        // await using compiles to try/finally — ensures the inner enumerator is
+        // always disposed even when the consumer breaks early or cancellation fires.
+        await using var enumerator = InnerClient
+            .GetStreamingResponseAsync(chatMessages, options, cancellationToken)
             .GetAsyncEnumerator(cancellationToken);
 
-        Exception? exception = null;
+        // Phase 1: Get the first chunk
         bool hasMore;
-
-        // Phase 1: Get the first chunk (can use try-catch here since no yield yet)
         try
         {
             hasMore = await enumerator.MoveNextAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await enumerator.DisposeAsync();
             RecordFailure();
             throw;
         }
@@ -100,7 +101,6 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
         // Empty stream — success
         if (!hasMore)
         {
-            await enumerator.DisposeAsync();
             RecordSuccess(sw.ElapsedMilliseconds);
             yield break;
         }
@@ -115,11 +115,16 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
             {
                 hasMore = await enumerator.MoveNextAsync();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
+            {
+                // Cancellation is not a deployment failure — just release in-flight count
+                _leastBusyStrategy?.Release(_deploymentName);
+                throw;
+            }
+            catch (Exception ex)
             {
                 RecordFailure();
-                exception = ex;
-                break;
+                throw;
             }
 
             if (!hasMore)
@@ -127,11 +132,6 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
 
             yield return enumerator.Current;
         }
-
-        await enumerator.DisposeAsync();
-
-        if (exception is not null)
-            throw exception;
 
         // Stream completed successfully
         RecordSuccess(sw.ElapsedMilliseconds);
