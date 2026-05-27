@@ -64,6 +64,12 @@ public class VirtualModelOptions
 
     /// <summary>Context compaction behavior for this virtual model.</summary>
     public ContextCompactionOptions? ContextCompaction { get; set; }
+
+    /// <summary>
+    /// When set, this virtual model resolves through the provider catalog instead of
+    /// the old keyed-DI path. The value is a model name defined in <c>ProviderCatalog.ModelRouting</c>.
+    /// </summary>
+    public string? CatalogModel { get; set; }
 }
 
 public class VirtualModelMemoryOptions
@@ -134,7 +140,8 @@ public static class VirtualModelOptionsExtensions
             Skills = [],
             Memory = new VirtualModelMemoryOptions { Enabled = false, Scope = "developer+repo" },
             FallbackRules = CloneFallbackRules(options.FallbackRules),
-            ContextCompaction = options.ContextCompaction
+            ContextCompaction = options.ContextCompaction,
+            CatalogModel = null
         };
 
     public static CodebrewRouterOptions ToCodebrewRouterOptions(this VirtualModelOptions profile)
@@ -175,7 +182,8 @@ public static class VirtualModelOptionsExtensions
             FallbackRules = profile.FallbackRules.Count > 0
                 ? CloneFallbackRules(profile.FallbackRules)
                 : CloneFallbackRules(defaults.FallbackRules),
-            ContextCompaction = profile.ContextCompaction ?? defaults.ContextCompaction
+            ContextCompaction = profile.ContextCompaction ?? defaults.ContextCompaction,
+            CatalogModel = profile.CatalogModel
         };
 
     private static string? NormalizeExtends(string? extends, CodebrewRouterOptions defaults)
