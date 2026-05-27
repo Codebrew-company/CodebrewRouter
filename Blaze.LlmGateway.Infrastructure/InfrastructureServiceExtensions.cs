@@ -8,6 +8,7 @@ using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.PromptCleaning;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies;
+using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -138,6 +139,20 @@ public static class InfrastructureServiceExtensions
             var options = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.ProviderCatalog;
             return new InMemoryProviderCatalog(options);
         });
+
+        // ── Catalog Routing Strategies ──────────────────────────────────────────
+        // Register all 5 catalog routing strategies as singletons.
+        // These use Blaze.LlmGateway.Core.Catalog.IRoutingStrategy (not the legacy one).
+        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
+            new RoundRobinStrategy(sp.GetRequiredService<IProviderCatalog>()));
+        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
+            new ShuffleStrategy(sp.GetRequiredService<IProviderCatalog>()));
+        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
+            new LatencyStrategy(sp.GetRequiredService<IProviderCatalog>()));
+        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
+            new CostStrategy(sp.GetRequiredService<IProviderCatalog>()));
+        services.AddSingleton<Blaze.LlmGateway.Core.Catalog.IRoutingStrategy>(sp =>
+            new LeastBusyStrategy(sp.GetRequiredService<IProviderCatalog>()));
 
         // Register thread-safe health state manager
         services.AddSingleton<IOllamaHealthState>(sp =>
