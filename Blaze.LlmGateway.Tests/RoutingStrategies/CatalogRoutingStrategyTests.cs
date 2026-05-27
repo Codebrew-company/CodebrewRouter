@@ -112,6 +112,7 @@ public class CatalogRoutingStrategyTests
         Assert.NotEqual(second.Name, third.Name);
         // Fourth call wraps back to first
         var fourth = strategy.Select(deps, Ctx());
+        Assert.NotNull(fourth);
         Assert.Equal(first.Name, fourth.Name);
     }
 

@@ -11,6 +11,7 @@ namespace Blaze.LlmGateway.Infrastructure.Catalog;
 public sealed class InMemoryProviderCatalog : IProviderCatalog
 {
     private readonly IReadOnlyDictionary<string, ProviderDeployment> _deployments;
+    private readonly IReadOnlyList<ProviderDeployment> _allDeployments;
     private readonly IReadOnlyDictionary<string, CatalogModelRoute> _routes;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<ProviderDeployment>> _deploymentsByModel;
     private readonly ConcurrentDictionary<string, DeploymentHealth> _healthState = new(StringComparer.OrdinalIgnoreCase);
@@ -27,6 +28,7 @@ public sealed class InMemoryProviderCatalog : IProviderCatalog
             deployments[dep.Name] = dep;
         }
         _deployments = deployments;
+        _allDeployments = deployments.Values.ToArray().AsReadOnly();
 
         // Build route lookup by model name
         var routes = new Dictionary<string, CatalogModelRoute>(StringComparer.OrdinalIgnoreCase);
@@ -59,7 +61,7 @@ public sealed class InMemoryProviderCatalog : IProviderCatalog
     }
 
     public IReadOnlyList<ProviderDeployment> GetAllDeployments()
-        => _deployments.Values.ToArray();
+        => _allDeployments;
 
     public IReadOnlyList<ProviderDeployment> GetDeploymentsForModel(string modelName)
         => _deploymentsByModel.TryGetValue(modelName, out var list)
