@@ -29,9 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /app .
 
-# LM-Kit model cache — mount a volume here so the 7.5 GB model
-# isn't re-downloaded every time the container starts
-VOLUME /app/.llm-cache
+# LM-Kit model cache — mount a compose-managed named volume (llm-cache) here.
+# Do NOT use Dockerfile VOLUME — it creates an anonymous volume that conflicts
+# with the compose volume mount and causes model file corruption on recreate.
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:5022
 EXPOSE 5022
