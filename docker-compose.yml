@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────
+# CodebrewRouter — Standalone Docker deployment
+# Persists after `dotnet run --project AppHost` stops.
+# Accessible network-wide (LAN).
+# ─────────────────────────────────────────────────────
+
+services:
+  # ── Blaze Gateway API + in-process DevUI ─────────
+  api:
+    build:
+      context: .
+      dockerfile: Blaze.LlmGateway.Api/Dockerfile
+    container_name: codebrewrouter-api
+    restart: unless-stopped
+    ports:
+      - "5022:5022"
+    volumes:
+      # Persist the LM-Kit model cache (~7.5 GB) across restarts
+      - llm-cache:/app/.llm-cache
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      # Override provider endpoints if your LAN IPs change.
+      # Defaults come from appsettings.json in the image.
+      # Uncomment and adjust as needed:
+      # LlmGateway__Providers__OllamaRouter__PrimaryEndpoint: "http://192.168.16.12:11434"
+      # LlmGateway__Providers__LmStudio__Endpoint: "http://192.168.16.56:1234/v1"
+
+  # ── Open WebUI (chat playground) ──────────────────
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:v0.9.5
+    container_name: codebrewrouter-openwebui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - blaze-openwebui-data:/app/backend/data
+    environment:
+      WEBUI_AUTH: "False"
+      ENABLE_OLLAMA_API: "False"
+      OPENAI_API_BASE_URL: "http://api:5022/v1"
+      OPENAI_API_KEY: "sk-blaze-webui"
+    depends_on:
+      - api
+
+volumes:
+  llm-cache:
+  blaze-openwebui-data:
