@@ -4,6 +4,7 @@ using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.ModelCatalog;
+using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Blaze.LlmGateway.Infrastructure.TokenCounting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +23,8 @@ public sealed class ModelSelectionResolver(
     IOptions<ContextSizingOptions> sizingOptions,
     ILogger<ModelSelectionResolver> logger,
     ILogger<ContextSizingChatClient> sizingLogger,
-    CatalogModelRouter? catalogModelRouter = null) : IModelSelectionResolver
+    CatalogModelRouter? catalogModelRouter = null,
+    IRoutingStrategyResolver? strategyResolver = null) : IModelSelectionResolver
 {
     public async Task<IChatClient?> ResolveAsync(string modelId, CancellationToken cancellationToken = default)
     {
@@ -43,6 +45,9 @@ public sealed class ModelSelectionResolver(
                         var client = serviceProvider.GetKeyedService<IChatClient>(deployment.Provider);
                         if (client is not null)
                         {
+                            var catalog = serviceProvider.GetRequiredService<IProviderCatalog>();
+                            client = new CatalogMetricsChatClient(
+                                client, catalog, deployment.Name, strategyResolver);
                             logger.LogInformation(
                                 "Offline-only mode active; resolved virtual model {ModelId} to catalog deployment {Deployment} ({Provider})",
                                 modelId, deployment.Name, deployment.Provider);
@@ -85,6 +90,9 @@ public sealed class ModelSelectionResolver(
                     var client = serviceProvider.GetKeyedService<IChatClient>(deployment.Provider);
                     if (client is not null)
                     {
+                        var catalog = serviceProvider.GetRequiredService<IProviderCatalog>();
+                        client = new CatalogMetricsChatClient(
+                            client, catalog, deployment.Name, strategyResolver);
                         logger.LogDebug(
                             "Resolved virtual model {ModelId} to catalog deployment {Deployment} ({Provider})",
                             modelId, deployment.Name, deployment.Provider);

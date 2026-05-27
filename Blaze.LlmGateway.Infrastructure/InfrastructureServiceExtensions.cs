@@ -244,7 +244,8 @@ public static class InfrastructureServiceExtensions
             sp.GetRequiredService<IOptions<ContextSizingOptions>>(),
             sp.GetRequiredService<ILogger<ModelSelectionResolver>>(),
             sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>(),
-            catalogModelRouter: sp.GetService<CatalogModelRouter>()));
+            catalogModelRouter: sp.GetService<CatalogModelRouter>(),
+            strategyResolver: sp.GetService<IRoutingStrategyResolver>()));
         services.AddSingleton<KeywordRoutingStrategy>();
         services.AddSingleton<LegacyRoutingStrategy>(sp =>
         {
