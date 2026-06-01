@@ -54,7 +54,10 @@ def main():
     if health.get("gemini") is False:
         alerts.append("Gemini model is DOWN — pipeline cannot run cleanup stage.")
     if health.get("codex") is False:
-        alerts.append("Codex is DOWN — pipeline will skip Codex stages (reduced capability).")
+        if health.get("executor") is False:
+            alerts.append("Both Codex and executor fallback are DOWN — Tier 2/3 will produce plan dumps only.")
+        else:
+            alerts.append("Codex is DOWN (executor fallback available) — Tier 2/3 will use model-based execution.")
 
     # Check last run freshness
     last_run = status.get("last_run")

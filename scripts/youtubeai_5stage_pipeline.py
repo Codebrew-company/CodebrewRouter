@@ -63,12 +63,19 @@ PLANNER_CHAIN = [
     ("opencode-go", "deepseek-v4-pro"),
     ("opencode-go", "qwen3.7-max"),
 ]
-EXECUTOR_CHAIN = ["codex"]
+EXECUTOR_CHAIN = [
+    ("opencode-go", "deepseek-v4-flash"),
+    ("opencode-go", "qwen3.7-max"),
+]
 GEMINI_CHAIN = [
     ("google-gemini-cli", "gemini-3-flash-preview"),
     ("azure-foundry", "gpt-5.4"),
     ("opencode-go", "deepseek-v4-flash"),
 ]
+
+# Retry config
+MAX_RETRIES = 2           # max retry attempts per model call
+RETRY_BASE_DELAY = 5      # initial delay in seconds (doubles each retry)
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 def ts_now():
@@ -105,6 +112,49 @@ def update_status(status_data):
     current.update(status_data)
     current["last_updated"] = ts_iso()
     save_json(STATUS_FILE, current)
+
+# ── Retry helper ────────────────────────────────────────────────────────────
+def call_with_retry(call_fn, model_name, max_retries=MAX_RETRIES, base_delay=RETRY_BASE_DELAY):
+    """Call a model function with exponential backoff retry.
+
+    call_fn is a zero-arg callable that returns result string on success,
+    None/empty on failure, or raises on error.
+
+    Returns result string on success, None if all attempts failed.
+    """
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            result = call_fn()
+            if result and result.strip() and not result.startswith("ERROR:"):
+                return result
+            last_error = result if result else "Empty response"
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                log(f"  Retry {attempt+1}/{max_retries} for {model_name} in {delay}s (last: {str(last_error)[:80]})")
+                time.sleep(delay)
+        except subprocess.TimeoutExpired as e:
+            last_error = f"Timeout: {e}"
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                log(f"  Retry {attempt+1}/{max_retries} for {model_name} after timeout in {delay}s")
+                time.sleep(delay)
+        except subprocess.CalledProcessError as e:
+            last_error = f"Exit {e.returncode}: {(e.stderr or '')[:200]}"
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                log(f"  Retry {attempt+1}/{max_retries} for {model_name} after exit {e.returncode} in {delay}s")
+                time.sleep(delay)
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                log(f"  Retry {attempt+1}/{max_retries} for {model_name} after {type(e).__name__} in {delay}s")
+                time.sleep(delay)
+            else:
+                raise
+    log(f"  [FAIL] All {max_retries+1} attempts failed for {model_name}: {str(last_error)[:200]}")
+    return None
 
 # ── Complexity detection ─────────────────────────────────────────────────────
 def detect_tier(transcript_text):
@@ -189,12 +239,13 @@ def upload_to_drive(token, parent_id, filename, content, mime_type="text/markdow
     return result.get("id", "?")
 
 # ── Hermes CLI helper ──────────────────────────────────────────────────────
-def call_hermes(prompt, provider, model, timeout=TIMEOUT_GEMINI):
+def call_hermes(prompt, provider, model, timeout=TIMEOUT_GEMINI, system_prompt=None):
     try:
-        result = subprocess.run(
-            ["hermes", "chat", "--provider", provider, "-m", model, "-q", prompt],
-            capture_output=True, text=True, timeout=timeout
-        )
+        cmd = ["hermes", "chat", "--provider", provider, "-m", model]
+        if system_prompt:
+            cmd += ["-s", system_prompt]
+        cmd += ["-q", prompt]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         output = result.stdout
         lines = output.split("\n")
         in_box = False
@@ -219,100 +270,136 @@ def call_hermes(prompt, provider, model, timeout=TIMEOUT_GEMINI):
         return f"ERROR: {provider}/{model} timed out"
     except Exception as e:
         return f"ERROR: {provider}/{model} failed: {e}"
-def call_codex(prompt, capture_files=True):
-    """Call Codex CLI in exec mode. Returns response text.
+def call_codex(prompt, capture_files=True, max_retries=MAX_RETRIES):
+    """Call Codex CLI in exec mode with retry. Returns response text or 'ERROR:...' on failure.
     If capture_files=True, also reads any .md files Codex writes to disk."""
     out_dir = os.path.join(DATA_DIR, "codex_outputs")
     os.makedirs(out_dir, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
-        f.write(prompt)
-        prompt_path = f.name
-    try:
-        result = subprocess.run(
-            ["codex", "exec", f"@{prompt_path}"],
-            capture_output=True, text=True, timeout=TIMEOUT_CODEX,
-            cwd=out_dir
-        )
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
-
-        if result.returncode != 0:
-            return f"ERROR: Codex exit {result.returncode}: {stderr[:500]}\n{stdout[:500]}"
-
-        # Extract text response from stdout
-        response_text = ""
-        if "\ncodex\n" in stdout:
-            parts = stdout.split("\ncodex\n", 1)
-            if len(parts) > 1:
-                response_text = parts[1]
-                if "\ntokens used" in response_text:
-                    response_text = response_text.split("\ntokens used")[0].strip()
-                response_text = response_text.strip()
-
-        if not response_text:
-            lines = stdout.split("\n")
-            response_text = "\n".join(
-                l for l in lines
-                if not l.startswith(("codex", "tokens", "user", "OpenAI", "--------", "workdir:", "model:", "provider:", "approval:", "sandbox:", "reasoning", "session"))
-            ).strip()
-
-        # If Codex wrote files, capture their content
-        captured_files = {}
-        if capture_files:
-            md_files = sorted(glob.glob(os.path.join(out_dir, "*.md"))) + \
-                       sorted(glob.glob(os.path.join(out_dir, "**", "*.md"), recursive=True))
-            for mf in md_files:
-                with open(mf, encoding="utf-8", errors="replace") as fh:
-                    captured_files[os.path.basename(mf)] = fh.read()
-
-        # Build combined output
-        combined = response_text
-        if captured_files:
-            # Add file contents with clear delimiters
-            file_content_parts = [combined]
-            for fname, fcontent in sorted(captured_files.items()):
-                if fcontent.strip():
-                    file_content_parts.append(f"\n--- FILE: {fname} ---\n{fcontent}")
-            combined = "\n\n".join(file_content_parts)
-            # Also save to pipeline outputs dir
-            for fname, fcontent in captured_files.items():
-                dest = os.path.join(os.path.join(DATA_DIR, "outputs"), fname)
-                with open(dest, "w", encoding="utf-8") as fo:
-                    fo.write(fcontent)
-                log(f"  Captured Codex file: {fname} ({len(fcontent):,} chars)")
-
-        return combined or stdout
-    except subprocess.TimeoutExpired:
-        return "ERROR: Codex timed out"
-    except FileNotFoundError:
-        return "ERROR: codex command not found"
-    except Exception as e:
-        return f"ERROR: Codex failed: {e}"
-    finally:
+    def _codex_run():
+        """Execute Codex once. Returns (response_text, stdout) or raises on error."""
+        prompt_path = None
         try:
-            os.unlink(prompt_path)
-        except:
-            pass
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+                f.write(prompt)
+                prompt_path = f.name
+            result = subprocess.run(
+                ["codex", "exec", f"@{prompt_path}"],
+                capture_output=True, text=True, timeout=TIMEOUT_CODEX,
+                cwd=out_dir
+            )
+            stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, ["codex"], stdout, stderr)
+
+            # Extract text response from stdout
+            response_text = ""
+            if "\ncodex\n" in stdout:
+                parts = stdout.split("\ncodex\n", 1)
+                if len(parts) > 1:
+                    response_text = parts[1]
+                    if "\ntokens used" in response_text:
+                        response_text = response_text.split("\ntokens used")[0].strip()
+                    response_text = response_text.strip()
+
+            if not response_text:
+                lines = stdout.split("\n")
+                response_text = "\n".join(
+                    l for l in lines
+                    if not l.startswith(("codex", "tokens", "user", "OpenAI", "--------", "workdir:", "model:", "provider:", "approval:", "sandbox:", "reasoning", "session"))
+                ).strip()
+
+            return response_text, stdout
+        finally:
+            if prompt_path:
+                try:
+                    os.unlink(prompt_path)
+                except OSError:
+                    pass
+
+    # Run Codex with retry — extract just the response text
+    raw_response = call_with_retry(lambda: _codex_run()[0], "codex", max_retries=max_retries)
+    if not raw_response:
+        return "ERROR: Codex failed after all retries"
+
+    # Capture generated files
+    captured_files = {}
+    if capture_files:
+        md_files = sorted(glob.glob(os.path.join(out_dir, "*.md"))) + \
+                   sorted(glob.glob(os.path.join(out_dir, "**", "*.md"), recursive=True))
+        for mf in md_files:
+            with open(mf, encoding="utf-8", errors="replace") as fh:
+                captured_files[os.path.basename(mf)] = fh.read()
+
+    # Build combined output
+    combined = raw_response
+    if captured_files:
+        file_content_parts = [combined]
+        for fname, fcontent in sorted(captured_files.items()):
+            if fcontent.strip():
+                file_content_parts.append(f"\n--- FILE: {fname} ---\n{fcontent}")
+        combined = "\n\n".join(file_content_parts)
+        for fname, fcontent in captured_files.items():
+            dest = os.path.join(os.path.join(DATA_DIR, "outputs"), fname)
+            with open(dest, "w", encoding="utf-8") as fo:
+                fo.write(fcontent)
+            log(f"  Captured Codex file: {fname} ({len(fcontent):,} chars)")
+
+    return combined
 
 # ── Fallback-aware model callers ────────────────────────────────────────────
 def call_gemini(prompt):
     for provider, model in GEMINI_CHAIN:
         log(f"    Trying gemini-equivalent: {provider}/{model}")
-        resp = call_hermes(prompt, provider, model)
-        if not resp.startswith("ERROR:"):
+        resp = call_with_retry(
+            lambda p=prompt, prov=provider, m=model: call_hermes(p, prov, m),
+            f"{provider}/{model}"
+        )
+        if resp:
             return resp
-        log(f"    {resp}")
+        log(f"    All retries exhausted for {provider}/{model}")
     return "ERROR: All gemini-equivalent models failed"
 
 def call_planner(prompt):
     for provider, model in PLANNER_CHAIN:
         log(f"    Trying planner: {provider}/{model}")
-        resp = call_hermes(prompt, provider, model, timeout=TIMEOUT_PLANNER)
-        if not resp.startswith("ERROR:"):
+        resp = call_with_retry(
+            lambda p=prompt, prov=provider, m=model: call_hermes(p, prov, m, timeout=TIMEOUT_PLANNER),
+            f"{provider}/{model}"
+        )
+        if resp:
             return resp
-        log(f"    {resp}")
+        log(f"    All retries exhausted for {provider}/{model}")
     return "ERROR: All planner models failed"
+
+def execute_plan_with_fallback(full_prompt, title, plan_str, tier_name):
+    """Execute a formatted prompt via Codex with retry, falling through to model executor.
+
+    Returns:
+        (output_text, source) -- source is 'codex', 'model:provider/model', or 'plan_dump'
+    """
+    # Attempt 1: Codex with retry
+    log("  Attempt 1: Codex execution...")
+    codex_result = call_codex(full_prompt, max_retries=MAX_RETRIES)
+    if codex_result and not codex_result.startswith("ERROR:"):
+        return codex_result, "codex"
+
+    # Attempt 2: Model-based executor chain
+    log("  Attempt 2: Model-based executor...")
+    for provider, model in EXECUTOR_CHAIN:
+        log(f"    Trying executor: {provider}/{model}")
+        resp = call_with_retry(
+            lambda p=full_prompt, prov=provider, m=model: call_hermes(p, prov, m, timeout=TIMEOUT_CODEX),
+            f"{provider}/{model}"
+        )
+        if resp:
+            return resp, f"model:{provider}/{model}"
+
+    # Last resort: plan dump
+    log("  All execution paths failed. Outputting plan as fallback.")
+    return f"# Analysis: {title}\n\n## Plan (execution unavailable)\n\n{plan_str}", "plan_dump"
 
 # ── Model health check ─────────────────────────────────────────────────────
 def test_models():
@@ -336,15 +423,24 @@ def test_models():
         log(f"  [FAIL] Planner: {provider}/{model}")
 
     codex_ok = False
+    executor_ok = False
     test_resp = call_codex("Respond with OK")
     if not test_resp.startswith("ERROR:"):
         log(f"  [OK] Codex CLI")
         codex_ok = True
     else:
         log(f"  [FAIL] Codex: {test_resp[:100]}")
+        log("  Testing executor fallback models...")
+        for provider, model in EXECUTOR_CHAIN:
+            resp = call_hermes("Respond with: OK", provider, model, timeout=30)
+            if not resp.startswith("ERROR:"):
+                log(f"  [OK] Executor: {provider}/{model}")
+                executor_ok = True
+                break
+            log(f"  [FAIL] Executor: {provider}/{model}")
 
-    log(f"  --- Health: Gemini={gemini_ok}, Planner={planner_ok}, Codex={codex_ok} ---")
-    return gemini_ok, planner_ok, codex_ok
+    log(f"  --- Health: Gemini={gemini_ok}, Planner={planner_ok}, Codex={codex_ok}, Executor={executor_ok} ---")
+    return gemini_ok, planner_ok, codex_ok, executor_ok
 
 # ── Queue management ────────────────────────────────────────────────────────
 def auto_seed_queue():
@@ -772,16 +868,11 @@ def run_tier2(video, cleaned):
     with open(os.path.join(DATA_DIR, "plans", f"{video_id}.json"), "w") as f:
         json.dump(plan, f, indent=2)
 
-    # Stage 2B: Codex execute
-    log("  Stage 3: Codex execution...")
+    # Stage 2B: Execute (Codex with model fallback)
+    log("  Stage 3: Execution...")
     codex_prompt_tier2 = TIER2_CODEX_PROMPT.format(plan=plan_str)
-    codex_output = call_codex(codex_prompt_tier2)
-
-    if codex_output.startswith("ERROR:"):
-        log(f"  Codex failed, saving plan as analysis instead")
-        codex_output = f"# {title}\n\nPlan analysis:\n\n{plan_str}"
-    else:
-        log(f"  Codex output: {len(codex_output):,} chars")
+    codex_output, codex_source = execute_plan_with_fallback(codex_prompt_tier2, title, plan_str, "tier2")
+    log(f"  Execution source: {codex_source}, output: {len(codex_output):,} chars")
 
     os.makedirs(os.path.join(DATA_DIR, "outputs"), exist_ok=True)
     out_path = os.path.join(DATA_DIR, "outputs", f"{video_id}_tier2.md")
@@ -848,22 +939,16 @@ def run_tier3(video, cleaned):
     with open(os.path.join(DATA_DIR, "plans", f"{video_id}.json"), "w") as f:
         json.dump(plan, f, indent=2)
 
-    # Stage 3: Execute (Codex)
-    log("  Stage 3: Codex execution...")
+    # Stage 3: Execute (Codex with model fallback)
+    log("  Stage 3: Execution...")
     if len(cleaned) > 8000:
         excerpt = cleaned[:4000] + "\n\n[...content omitted...]\n\n" + cleaned[-4000:]
     else:
         excerpt = cleaned
 
     codex_prompt = TIER3_CODEX_PROMPT.format(plan=plan_json_str, transcript_excerpt=excerpt)
-    codex_output = call_codex(codex_prompt)
-
-    if codex_output.startswith("ERROR:"):
-        log(f"  Codex failed: {codex_output}")
-        log("  Saving plan as fallback output")
-        codex_output = f"# Analysis: {title}\n\n## Plan (Codex unavailable)\n\n{plan_json_str}"
-    else:
-        log(f"  Codex output: {len(codex_output):,} chars")
+    codex_output, codex_source = execute_plan_with_fallback(codex_prompt, title, plan_json_str, "tier3")
+    log(f"  Execution source: {codex_source}, output: {len(codex_output):,} chars")
 
     os.makedirs(os.path.join(DATA_DIR, "outputs"), exist_ok=True)
     out_path = os.path.join(DATA_DIR, "outputs", f"{video_id}_tier3.md")
@@ -1042,21 +1127,23 @@ def main():
     auto_seed_queue()
 
     # Pre-flight model health check
-    gemini_ok, planner_ok, codex_ok = test_models()
+    gemini_ok, planner_ok, codex_ok, executor_ok = test_models()
 
     if not gemini_ok:
         log("GUARDRAIL: No Gemini/cleanup model available. Aborting.")
-        update_status({"health": {"gemini": False, "planner": planner_ok, "codex": codex_ok}})
+        update_status({"health": {"gemini": False, "planner": planner_ok, "codex": codex_ok, "executor": executor_ok}})
         result["status"] = "FAILED"
         result["error"] = "No Gemini model available"
         print(json.dumps(result))
         sys.exit(1)
 
     if not codex_ok:
-        log("WARNING: Codex not available. Will skip Codex stages but continue.")
-        # Don't abort - still do Gemini-only analysis
+        if executor_ok:
+            log("WARNING: Codex not available but executor fallback models are. Will use model-based execution for Tier 2/3.")
+        else:
+            log("WARNING: Codex not available and no executor fallback. Will skip Codex stages and use plan dumps for Tier 2/3.")
 
-    update_status({"health": {"gemini": gemini_ok, "planner": planner_ok, "codex": codex_ok}})
+    update_status({"health": {"gemini": gemini_ok, "planner": planner_ok, "codex": codex_ok, "executor": executor_ok}})
 
     # Find next video
     video = get_next_video()
