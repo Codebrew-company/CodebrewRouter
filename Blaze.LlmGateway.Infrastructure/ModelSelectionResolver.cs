@@ -1,7 +1,10 @@
+using Blaze.LlmGateway.Core.Catalog;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
+using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.ModelCatalog;
+using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Blaze.LlmGateway.Infrastructure.TokenCounting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +22,9 @@ public sealed class ModelSelectionResolver(
     IContextCompactor compactor,
     IOptions<ContextSizingOptions> sizingOptions,
     ILogger<ModelSelectionResolver> logger,
-    ILogger<ContextSizingChatClient> sizingLogger) : IModelSelectionResolver
+    ILogger<ContextSizingChatClient> sizingLogger,
+    CatalogModelRouter? catalogModelRouter = null,
+    IRoutingStrategyResolver? strategyResolver = null) : IModelSelectionResolver
 {
     public async Task<IChatClient?> ResolveAsync(string modelId, CancellationToken cancellationToken = default)
     {
@@ -27,6 +32,30 @@ public sealed class ModelSelectionResolver(
         {
             if (IsVirtualModel(modelId))
             {
+                // Offline mode: check catalog binding first
+                var vmOptions = gatewayOptions.Value.FindVirtualModel(modelId);
+                if (vmOptions?.CatalogModel is not null && catalogModelRouter is not null)
+                {
+                    var deployment = catalogModelRouter.SelectDeployment(
+                        vmOptions.CatalogModel,
+                        new RoutingContext(modelId, 0, false, false, false, cancellationToken));
+
+                    if (deployment is not null)
+                    {
+                        var client = serviceProvider.GetKeyedService<IChatClient>(deployment.Provider);
+                        if (client is not null)
+                        {
+                            var catalog = serviceProvider.GetRequiredService<IProviderCatalog>();
+                            client = new CatalogMetricsChatClient(
+                                client, catalog, deployment.Name, strategyResolver);
+                            logger.LogInformation(
+                                "Offline-only mode active; resolved virtual model {ModelId} to catalog deployment {Deployment} ({Provider})",
+                                modelId, deployment.Name, deployment.Provider);
+                            return client;
+                        }
+                    }
+                }
+
                 var codebrewRouter = serviceProvider.GetKeyedService<IChatClient>("CodebrewRouter");
                 if (codebrewRouter is not null)
                 {
@@ -44,6 +73,43 @@ public sealed class ModelSelectionResolver(
 
         if (IsVirtualModel(modelId))
         {
+            // Phase 2: When CatalogModel is set, route through the provider catalog
+            var vmOptions = gatewayOptions.Value.FindVirtualModel(modelId);
+            if (vmOptions?.CatalogModel is not null && catalogModelRouter is not null)
+            {
+                logger.LogDebug(
+                    "Virtual model {ModelId} has CatalogModel={CatalogModel}; routing through provider catalog",
+                    modelId, vmOptions.CatalogModel);
+
+                var deployment = catalogModelRouter.SelectDeployment(
+                    vmOptions.CatalogModel,
+                    new RoutingContext(modelId, 0, false, false, false, cancellationToken));
+
+                if (deployment is not null)
+                {
+                    var client = serviceProvider.GetKeyedService<IChatClient>(deployment.Provider);
+                    if (client is not null)
+                    {
+                        var catalog = serviceProvider.GetRequiredService<IProviderCatalog>();
+                        client = new CatalogMetricsChatClient(
+                            client, catalog, deployment.Name, strategyResolver);
+                        logger.LogDebug(
+                            "Resolved virtual model {ModelId} to catalog deployment {Deployment} ({Provider})",
+                            modelId, deployment.Name, deployment.Provider);
+                        return client;
+                    }
+
+                    logger.LogWarning(
+                        "Catalog deployment {Deployment} selected for {ModelId}, but no IChatClient registered for provider {Provider}",
+                        deployment.Name, modelId, deployment.Provider);
+                    return null;
+                }
+
+                logger.LogWarning(
+                    "Catalog model routing failed for virtual model {ModelId} (CatalogModel={CatalogModel}); falling back to CodebrewRouter",
+                    modelId, vmOptions.CatalogModel);
+            }
+
             var codebrewRouter = serviceProvider.GetKeyedService<IChatClient>("CodebrewRouter");
             if (codebrewRouter is not null)
             {

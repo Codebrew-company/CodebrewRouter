@@ -108,7 +108,8 @@ public static class ModelsEndpoint
                 OwnedBy: model.OwnedBy,
                 Source: model.Source,
                 Enabled: model.Enabled,
-                ErrorMessage: model.ErrorMessage))
+                ErrorMessage: model.ErrorMessage,
+                SupportsVision: model.SupportsVision))
             .OrderBy(model => model.Provider, StringComparer.OrdinalIgnoreCase)
             .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -179,7 +180,8 @@ public static class ModelsEndpoint
                 Endpoint: model.Endpoint,
                 Enabled: model.Enabled,
                 ErrorMessage: model.ErrorMessage,
-                LastCheckedUtc: model.LastCheckedUtc))
+                LastCheckedUtc: model.LastCheckedUtc,
+                SupportsVision: model.SupportsVision))
             .OrderBy(model => model.Provider, StringComparer.OrdinalIgnoreCase)
             .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();

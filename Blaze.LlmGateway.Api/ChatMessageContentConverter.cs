@@ -137,6 +137,18 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
                     MediaType: InferMediaType(imageUrl));
         }
 
+        if (type is "video_url" or "input_video")
+        {
+            var videoUrl = ReadVideoUrl(part, out var detail);
+            return string.IsNullOrWhiteSpace(videoUrl)
+                ? null
+                : new ChatContentPart(
+                    Type: type,
+                    VideoUrl: videoUrl,
+                    Detail: detail,
+                    MediaType: InferMediaType(videoUrl));
+        }
+
         if (type is "file" or "input_file")
         {
             return new ChatContentPart(
@@ -170,6 +182,28 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
         return ReadString(imageUrl, "url");
     }
 
+    private static string? ReadVideoUrl(JsonElement part, out string? detail)
+    {
+        detail = ReadString(part, "detail");
+        if (!part.TryGetProperty("video_url", out var videoUrl))
+        {
+            return ReadString(part, "url");
+        }
+
+        if (videoUrl.ValueKind == JsonValueKind.String)
+        {
+            return videoUrl.GetString();
+        }
+
+        if (videoUrl.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        detail = ReadString(videoUrl, "detail") ?? detail;
+        return ReadString(videoUrl, "url");
+    }
+
     private static string? ReadString(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
@@ -198,6 +232,11 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
             ".gif" => "image/gif",
             ".webp" => "image/webp",
             ".bmp" => "image/bmp",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".avi" => "video/x-msvideo",
+            ".mkv" => "video/x-matroska",
             _ => "image/*"
         };
     }
@@ -220,6 +259,19 @@ public class ChatMessageContentConverter : JsonConverter<ChatMessageDto>
                 writer.WritePropertyName("image_url");
                 writer.WriteStartObject();
                 writer.WriteString("url", part.ImageUrl);
+                if (!string.IsNullOrWhiteSpace(part.Detail))
+                {
+                    writer.WriteString("detail", part.Detail);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            if (!string.IsNullOrEmpty(part.VideoUrl))
+            {
+                writer.WritePropertyName("video_url");
+                writer.WriteStartObject();
+                writer.WriteString("url", part.VideoUrl);
                 if (!string.IsNullOrWhiteSpace(part.Detail))
                 {
                     writer.WriteString("detail", part.Detail);

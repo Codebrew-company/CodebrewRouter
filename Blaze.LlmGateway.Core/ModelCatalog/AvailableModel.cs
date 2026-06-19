@@ -9,4 +9,5 @@ public sealed record AvailableModel(
     bool SupportsChat = true,
     bool Enabled = true,
     string? ErrorMessage = null,
-    DateTimeOffset? LastCheckedUtc = null);
+    DateTimeOffset? LastCheckedUtc = null,
+    bool? SupportsVision = null);

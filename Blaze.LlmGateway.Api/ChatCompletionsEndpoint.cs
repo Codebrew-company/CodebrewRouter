@@ -492,6 +492,11 @@ public static class ChatCompletionsEndpoint
                 {
                     contents.Add(ToImageContent(part.ImageUrl, part.MediaType));
                 }
+
+                if (!string.IsNullOrWhiteSpace(part.VideoUrl))
+                {
+                    contents.Add(ToVideoContent(part.VideoUrl, part.MediaType));
+                }
             }
         }
         else if (!string.IsNullOrEmpty(message.Content))
@@ -513,6 +518,17 @@ public static class ChatCompletionsEndpoint
             : new UriContent(new Uri(imageUrl), resolvedMediaType);
     }
 
+    private static AIContent ToVideoContent(string videoUrl, string? mediaType)
+    {
+        var resolvedMediaType = string.IsNullOrWhiteSpace(mediaType)
+            ? InferMediaType(videoUrl)
+            : mediaType;
+
+        return videoUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            ? new DataContent(new Uri(videoUrl), resolvedMediaType)
+            : new UriContent(new Uri(videoUrl), resolvedMediaType);
+    }
+
     private static string InferMediaType(string uri)
     {
         if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
@@ -531,6 +547,11 @@ public static class ChatCompletionsEndpoint
             ".gif" => "image/gif",
             ".webp" => "image/webp",
             ".bmp" => "image/bmp",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".avi" => "video/x-msvideo",
+            ".mkv" => "video/x-matroska",
             _ => "image/*"
         };
     }

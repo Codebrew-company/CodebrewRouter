@@ -25,6 +25,8 @@ System.Net.ServicePointManager.ServerCertificateValidationCallback +=
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();            // FIRST — register OTel/health before anything else
+
 FoundryConfigurationAliases.AddFoundryEnvironmentAliases(builder.Configuration);
 
 // Detect if running under Aspire and configure logging appropriately
@@ -32,7 +34,7 @@ var isRunningUnderAspire = !string.IsNullOrEmpty(Environment.GetEnvironmentVaria
                            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")) ||
                            builder.Configuration["ASPIRE_RUNNING"] == "true";
 
-// Configure VERBOSE logging: clear defaults, add console, THEN add OTel via ServiceDefaults
+// Configure VERBOSE logging: clear defaults AFTER ServiceDefaults, add console
 builder.Logging.ClearProviders();
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 builder.Logging.AddSimpleConsole(options =>
@@ -41,8 +43,6 @@ builder.Logging.AddSimpleConsole(options =>
     options.SingleLine = false;
     options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff zzz ";
 });
-
-builder.AddServiceDefaults();
 
 builder.Services.Configure<LlmGatewayOptions>(
     builder.Configuration.GetSection(LlmGatewayOptions.SectionName));
