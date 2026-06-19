@@ -3,6 +3,7 @@ using Blaze.LlmGateway.Api;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.LocalInference;
 using Microsoft.Agents.AI.DevUI;
 using Microsoft.Agents.AI.Hosting;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Metrics;
 using Scalar.AspNetCore;
 
 // Allow self-signed HTTPS certificates for local development
@@ -62,6 +64,12 @@ builder.Services.AddSingleton<IProtocolStore>(_ =>
         : configuredPath;
     return new JsonProtocolStore(path);
 });
+
+// ── Catalog Observability: register OTel Meter source and Prometheus exporter ──
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics => metrics
+        .AddMeter("Blaze.LlmGateway.Catalog")
+        .AddPrometheusExporter());
 
 // Phase 1: Provider-backed local inference for offline-first codebrewRouter flow.
 builder.Services.AddCodebrewRouterLocalProvider(builder.Configuration);
@@ -263,6 +271,8 @@ const string landingHtml = """
           <span class="path">Streaming chat (SSE). Try it in Scalar.</span></a></li>
       <li><a class="card" href="/health"><span class="title">GET /health</span>
           <span class="path">Health probe</span></a></li>
+      <li><a class="card" href="/metrics"><span class="title">GET /metrics</span>
+          <span class="path">Observability dashboard (Prometheus)</span></a></li>
     </ul>
   </section>
 
@@ -318,6 +328,10 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("LlmGatewa
 
 app.MapDefaultEndpoints();
 startupLogger.LogInformation("  ├─ Health checks endpoint available at /health (Aspire readiness probes)");
+
+// Catalog observability dashboard: Prometheus metrics endpoint
+app.UseOpenTelemetryPrometheusScrapingEndpoint();
+startupLogger.LogInformation("  ├─ Observability metrics available at /metrics (Prometheus)");
 
 startupLogger.LogInformation("✅ Blaze.LlmGateway.Api startup complete");
 

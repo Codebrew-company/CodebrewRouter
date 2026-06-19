@@ -57,6 +57,8 @@ public class ProviderDeploymentConfig
     public List<string> Capabilities { get; set; } = [];
     public double CostPerToken { get; set; } = 0;
     public List<string> Tags { get; set; } = [];
+    public int MaxRequestsPerMinute { get; set; } = 0;
+    public int MaxTokensPerMinute { get; set; } = 0;
     public bool Enabled { get; set; } = true;
 }
 

@@ -126,6 +126,8 @@ public sealed class CatalogEndToEndIntegrationTests
     {
         // Arrange
         var catalogMock = new Mock<IProviderCatalog>(MockBehavior.Strict);
+        catalogMock.Setup(c => c.GetDeployment("deploy-x"))
+            .Returns(new ProviderDeployment { Name = "deploy-x", Provider = "TestProvider", ModelName = "test-model" });
         catalogMock.Setup(c => c.IsHealthy("deploy-x")).Returns(true);
         catalogMock.Setup(c => c.ReportHealth("deploy-x", true));
         // LeastBusyStrategy.Release will be called on success
@@ -153,6 +155,8 @@ public sealed class CatalogEndToEndIntegrationTests
     {
         // Arrange
         var catalogMock = new Mock<IProviderCatalog>(MockBehavior.Strict);
+        catalogMock.Setup(c => c.GetDeployment("deploy-x"))
+            .Returns(new ProviderDeployment { Name = "deploy-x", Provider = "TestProvider", ModelName = "test-model" });
         catalogMock.Setup(c => c.IsHealthy("deploy-x")).Returns(true);
         catalogMock.Setup(c => c.ReportHealth("deploy-x", false));
 

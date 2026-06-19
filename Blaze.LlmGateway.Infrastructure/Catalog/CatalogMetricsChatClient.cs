@@ -12,6 +12,7 @@ namespace Blaze.LlmGateway.Infrastructure.Catalog;
 /// - Health observation reporting on success/failure
 /// - Latency measurements fed to <see cref="LatencyStrategy"/>
 /// - In-flight tracking for <see cref="LeastBusyStrategy"/>
+/// - OpenTelemetry metrics via <see cref="CatalogMetrics"/>
 ///
 /// This is the production replacement for the local pipeline — wraps around the
 /// provider's keyed chat client after a catalog deployment is selected.
@@ -20,6 +21,8 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
 {
     private readonly IProviderCatalog _catalog;
     private readonly string _deploymentName;
+    private readonly string? _provider;
+    private readonly string? _modelName;
     private readonly LatencyStrategy? _latencyStrategy;
     private readonly LeastBusyStrategy? _leastBusyStrategy;
 
@@ -36,6 +39,14 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
         _catalog = catalog;
         _deploymentName = deploymentName;
 
+        // Resolve deployment metadata for metric tags
+        var deployment = catalog.GetDeployment(deploymentName);
+        if (deployment is not null)
+        {
+            _provider = deployment.Provider;
+            _modelName = deployment.ModelName;
+        }
+
         // Lazily resolve the strategies that need runtime feedback.
         if (strategyResolver is not null)
         {
@@ -51,16 +62,19 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
     {
         ThrowIfUnhealthy();
 
+        var tags = CatalogMetrics.TagsFor(_deploymentName, _provider, _modelName, isStreaming: false);
+        CatalogMetrics.ChatRequestsStarted.Add(1, tags.AsSpan());
+
         var sw = Stopwatch.StartNew();
         try
         {
             var response = await InnerClient.GetResponseAsync(chatMessages, options, cancellationToken);
-            RecordSuccess(sw.ElapsedMilliseconds);
+            RecordSuccess(sw.ElapsedMilliseconds, tags);
             return response;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            RecordFailure();
+            RecordFailure(tags, ex);
             throw;
         }
     }
@@ -78,6 +92,9 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
     {
         ThrowIfUnhealthy();
 
+        var tags = CatalogMetrics.TagsFor(_deploymentName, _provider, _modelName, isStreaming: true);
+        CatalogMetrics.ChatRequestsStarted.Add(1, tags.AsSpan());
+
         var sw = Stopwatch.StartNew();
 
         // await using compiles to try/finally — ensures the inner enumerator is
@@ -94,14 +111,14 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            RecordFailure();
+            RecordFailure(tags, ex);
             throw;
         }
 
         // Empty stream — success
         if (!hasMore)
         {
-            RecordSuccess(sw.ElapsedMilliseconds);
+            RecordSuccess(sw.ElapsedMilliseconds, tags);
             yield break;
         }
 
@@ -123,7 +140,7 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
             }
             catch (Exception ex)
             {
-                RecordFailure();
+                RecordFailure(tags, ex);
                 throw;
             }
 
@@ -134,29 +151,43 @@ public sealed class CatalogMetricsChatClient : DelegatingChatClient
         }
 
         // Stream completed successfully
-        RecordSuccess(sw.ElapsedMilliseconds);
+        RecordSuccess(sw.ElapsedMilliseconds, tags);
     }
 
     private void ThrowIfUnhealthy()
     {
         if (!_catalog.IsHealthy(_deploymentName))
         {
+            var rejectTags = CatalogMetrics.TagsFor(_deploymentName, _provider, _modelName);
+            CatalogMetrics.ChatRequestsRejected.Add(1, rejectTags.AsSpan());
+
             throw new InvalidOperationException(
                 $"Deployment '{_deploymentName}' is currently unavailable (circuit breaker open).");
         }
     }
 
-    private void RecordSuccess(long elapsedMs)
+    private void RecordSuccess(long elapsedMs, KeyValuePair<string, object?>[] tags)
     {
         _catalog.ReportHealth(_deploymentName, true);
         _latencyStrategy?.ReportLatency(_deploymentName, elapsedMs);
         _leastBusyStrategy?.Release(_deploymentName);
+
+        CatalogMetrics.ChatRequestsSucceeded.Add(1, tags.AsSpan());
+        CatalogMetrics.ChatRequestLatencyMs.Record(elapsedMs, tags.AsSpan());
     }
 
-    private void RecordFailure()
+    private void RecordFailure(KeyValuePair<string, object?>[] tags, Exception? ex = null)
     {
         _catalog.ReportHealth(_deploymentName, false);
         _leastBusyStrategy?.Release(_deploymentName);
+
+        // Add error type tag for richer failure analysis
+        var failureTags = new List<KeyValuePair<string, object?>>(tags)
+        {
+            new(CatalogMetrics.TagErrorType, ex?.GetType().Name ?? "unknown")
+        };
+
+        CatalogMetrics.ChatRequestsFailed.Add(1, failureTags.ToArray().AsSpan());
     }
 
     private static T? ResolveStrategy<T>(IRoutingStrategyResolver resolver, string name) where T : class

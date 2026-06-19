@@ -133,11 +133,28 @@ public static class InfrastructureServiceExtensions
 
     public static IServiceCollection AddLlmInfrastructure(this IServiceCollection services)
     {
-        // Register provider catalog (populated from config at startup)
+        // Register provider catalog (populated from config at startup, reloaded on config changes)
         services.AddSingleton<IProviderCatalog>(sp =>
         {
-            var options = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.ProviderCatalog;
-            return new InMemoryProviderCatalog(options);
+            var monitor = sp.GetRequiredService<IOptionsMonitor<LlmGatewayOptions>>();
+            var logger = sp.GetRequiredService<ILogger<InMemoryProviderCatalog>>();
+            var currentOptions = monitor.CurrentValue.ProviderCatalog;
+            var catalog = new InMemoryProviderCatalog(currentOptions, logger);
+
+            // Subscribe to config changes for dynamic reload
+            monitor.OnChange((options, _) =>
+            {
+                try
+                {
+                    catalog.Reload(options.ProviderCatalog);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to reload provider catalog on config change");
+                }
+            });
+
+            return catalog;
         });
 
         // ── Catalog Routing Strategies ──────────────────────────────────────────

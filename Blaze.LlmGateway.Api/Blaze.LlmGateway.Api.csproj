@@ -13,6 +13,7 @@
       <IncludeAssets>compile;runtime</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.7" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.16.0-beta.1" />
   </ItemGroup>
 
   <ItemGroup>

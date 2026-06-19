@@ -42,6 +42,12 @@ public sealed record ProviderDeployment
     /// <summary>Arbitrary tags for filtering and grouping (e.g. "primary", "low-latency", "local").</summary>
     public string[] Tags { get; init; } = [];
 
+    /// <summary>Max requests allowed per minute. 0 = unlimited. Used by rate limiting middleware.</summary>
+    public int MaxRequestsPerMinute { get; init; } = 0;
+
+    /// <summary>Max output tokens allowed per minute. 0 = unlimited. Used by rate limiting middleware.</summary>
+    public int MaxTokensPerMinute { get; init; } = 0;
+
     /// <summary>Whether this deployment is active. When false, it is skipped by all strategies.</summary>
     public bool Enabled { get; init; } = true;
 }

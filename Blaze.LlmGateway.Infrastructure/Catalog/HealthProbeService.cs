@@ -11,7 +11,8 @@ namespace Blaze.LlmGateway.Infrastructure.Catalog;
 /// <summary>
 /// Background service that periodically probes all catalog deployments by sending
 /// a short ping request through each deployment's keyed <see cref="IChatClient"/>.
-/// Reports health observations back to <see cref="IProviderCatalog.ReportHealth"/>.
+/// Reports health observations back to <see cref="IProviderCatalog.ReportHealth"/>
+/// and emits OpenTelemetry metrics via <see cref="CatalogMetrics"/>.
 /// </summary>
 public sealed class HealthProbeService : BackgroundService
 {
@@ -136,6 +137,8 @@ public sealed class HealthProbeService : BackgroundService
                 timeoutCts.Token);
 
             _catalog.ReportHealth(deployment.Name, healthy: true);
+            CatalogMetrics.HealthProbesSucceeded.Add(1,
+                CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
 
             _logger.LogDebug("Health probe succeeded for deployment {Deployment}", deployment.Name);
         }
@@ -143,11 +146,15 @@ public sealed class HealthProbeService : BackgroundService
         {
             // Timeout (not shutdown) — mark unhealthy
             _catalog.ReportHealth(deployment.Name, healthy: false);
+            CatalogMetrics.HealthProbesTimedOut.Add(1,
+                CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
             _logger.LogWarning("Health probe timed out for deployment {Deployment}", deployment.Name);
         }
         catch (Exception ex)
         {
             _catalog.ReportHealth(deployment.Name, healthy: false);
+            CatalogMetrics.HealthProbesFailed.Add(1,
+                CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
             _logger.LogWarning(ex, "Health probe failed for deployment {Deployment}", deployment.Name);
         }
     }
