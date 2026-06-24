@@ -20,6 +20,13 @@ public class LlmGatewayOptions
     public TaskClassificationOptions TaskClassification { get; set; } = new();
     public ContextSizingOptions ContextSizing { get; set; } = new();
     public ProviderCatalogOptions ProviderCatalog { get; set; } = new();
+
+    /// <summary>
+    /// When true, all route-decision log events ([ROUTER-SELECT], [ROUTER-DEPLOY], [ROUTER-HEALTH],
+    /// [ROUTER-FALLBACK], [ROUTER-FUSION], [ROUTER-FUSION-RESULT]) are emitted at Information level.
+    /// When false (default), only errors and warnings are logged above Debug.
+    /// </summary>
+    public bool VerboseRouteLogging { get; set; }
 }
 
 public class ProvidersOptions

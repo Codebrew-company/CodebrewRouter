@@ -78,3 +78,40 @@ public readonly record struct RouterStreamCompleteEvent(
     string Model,
     string TaskType,
     long ElapsedMs);
+
+// ── Verbose Route-Decision Events ──────────────────────────────────────────────
+
+/// <summary>Emitted when auto-routing begins: shows model, task classification, and strategy.</summary>
+public readonly record struct RouterSelectEvent(
+    string Model,
+    string Task,
+    string Strategy);
+
+/// <summary>Emitted when a specific deployment is selected from the catalog pool.</summary>
+public readonly record struct RouterDeployEvent(
+    string Selected,
+    string Because,
+    int Candidates);
+
+/// <summary>Emitted per deployment when filtering by health/capability.</summary>
+public readonly record struct RouterHealthEvent(
+    string Deployment,
+    string Status,
+    string Reason);
+
+/// <summary>Emitted when a provider fails and the router triggers fallback.</summary>
+public readonly record struct RouterFallbackEvent(
+    string From,
+    string To,
+    string Reason,
+    int Attempt);
+
+/// <summary>Emitted when fusion dispatch begins, listing participating models.</summary>
+public readonly record struct RouterFusionEvent(
+    string[] Models,
+    string Judge);
+
+/// <summary>Emitted when fusion selects a winner.</summary>
+public readonly record struct RouterFusionResultEvent(
+    string Chosen,
+    string Reason);

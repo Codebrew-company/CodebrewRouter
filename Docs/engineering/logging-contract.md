@@ -43,6 +43,12 @@ All request routing telemetry must start with one of these exact tags:
 | `[ROUTER-EXHAUSTED]` | Warning | All providers failed and fallback behavior. |
 | `[ROUTER-MIDSTREAM-FAIL]` | Warning | Streaming disconnect after response started. |
 | `[ROUTER-STREAM-COMPLETE]` | Information | Total chunks, model, and elapsed milliseconds. |
+| `[ROUTER-SELECT]` | Information | Model selection start: model ID, task classification, and strategy. |
+| `[ROUTER-DEPLOY]` | Information | Deployment selected: name, reason, and candidate count. |
+| `[ROUTER-HEALTH]` | Information | Per-deployment health filter: name, status, and reason. |
+| `[ROUTER-FALLBACK]` | Information | Fallback triggered: from provider, to provider, reason, and attempt number. |
+| `[ROUTER-FUSION]` | Information | Fusion dispatch: participating models and judge model. |
+| `[ROUTER-FUSION-RESULT]` | Information | Fusion result: chosen model and synthesis reason. |
 
 Use `RouterLog.Write(...)` instead of hand-written router log messages. Add or update tests in `Blaze.LlmGateway.Tests/RouterLoggingContractTests.cs` whenever a router event changes.
 

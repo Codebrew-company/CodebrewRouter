@@ -37,6 +37,12 @@ public sealed class RouterLoggingContractTests
             { new RouterExhaustedEvent(1, "General", "LocalGemma"), "[ROUTER-EXHAUSTED]", LogLevel.Warning },
             { new RouterMidstreamFailEvent("LocalGemma", "local-gemma"), "[ROUTER-MIDSTREAM-FAIL]", LogLevel.Warning },
             { new RouterStreamCompleteEvent(3, "LocalGemma", "local-gemma", "General", 100), "[ROUTER-STREAM-COMPLETE]", LogLevel.Information },
+            { new RouterSelectEvent("auto", "General", "auto-fallback"), "[ROUTER-SELECT]", LogLevel.Information },
+            { new RouterDeployEvent("hermes-yardly", "primary pool", 3), "[ROUTER-DEPLOY]", LogLevel.Information },
+            { new RouterHealthEvent("hermes-lead", "healthy", "passed all filters"), "[ROUTER-HEALTH]", LogLevel.Information },
+            { new RouterFallbackEvent("OpenCodeGo", "LocalGemma", "timeout", 2), "[ROUTER-FALLBACK]", LogLevel.Information },
+            { new RouterFusionEvent(["model-a", "model-b"], "model-a"), "[ROUTER-FUSION]", LogLevel.Information },
+            { new RouterFusionResultEvent("model-a", "fastest response"), "[ROUTER-FUSION-RESULT]", LogLevel.Information },
         };
 
     public static TheoryData<string> LocalWarmupTags =>

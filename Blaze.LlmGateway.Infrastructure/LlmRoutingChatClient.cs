@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Blaze.LlmGateway.Core;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
+using Blaze.LlmGateway.Core.Routing;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies;
 using Microsoft.Extensions.AI;
@@ -181,11 +182,15 @@ public class LlmRoutingChatClient : DelegatingChatClient
             {
                 _logger.LogWarning("  ├─ Failover provider {Fallback} context overflow ({Required} > {Budget}); trying next",
                     fallback, coe.RequiredTokens, coe.Budget);
+                if (_gatewayOptions.Value.VerboseRouteLogging)
+                    RouterLog.Write(_logger, new RouterFallbackEvent(fallback.ToString(), "(next)", coe.Message, 0));
                 lastOverflow = (lastOverflow ?? coe).WithAttempted(fallback.ToString());
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "  ├─ Failover provider {Fallback} also failed", fallback);
+                if (_gatewayOptions.Value.VerboseRouteLogging)
+                    RouterLog.Write(_logger, new RouterFallbackEvent(fallback.ToString(), "(next)", ex.GetBaseException().Message, 0));
             }
         }
 
@@ -240,11 +245,15 @@ public class LlmRoutingChatClient : DelegatingChatClient
                 if (probe.ThrownException is ContextOverflowException coe)
                 {
                     _logger.LogWarning("  ├─ Failover provider {Fallback} context overflow; trying next", fallback);
+                    if (_gatewayOptions.Value.VerboseRouteLogging)
+                        RouterLog.Write(_logger, new RouterFallbackEvent(fallback.ToString(), "(next)", coe.Message, 0));
                     lastOverflow = (lastOverflow ?? coe).WithAttempted(fallback.ToString());
                 }
                 else
                 {
                     _logger.LogWarning("  ├─ Failover provider {Fallback} failed before first chunk; trying next", fallback);
+                    if (_gatewayOptions.Value.VerboseRouteLogging)
+                        RouterLog.Write(_logger, new RouterFallbackEvent(fallback.ToString(), "(next)", "probe failed", 0));
                 }
                 continue;
             }

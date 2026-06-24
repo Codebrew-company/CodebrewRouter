@@ -5,6 +5,7 @@ using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace Blaze.LlmGateway.Tests.Catalog;
@@ -51,7 +52,8 @@ public sealed class CatalogEndToEndIntegrationTests
     {
         var cat = catalog ?? CreateCatalog();
         var resolver = new RoutingStrategyResolver(cat);
-        return new CatalogModelRouter(cat, resolver, NullLogger<CatalogModelRouter>.Instance);
+        return new CatalogModelRouter(cat, resolver, NullLogger<CatalogModelRouter>.Instance,
+            Options.Create(new LlmGatewayOptions()));
     }
 
     private static RoutingContext Ctx(string modelId = "test-model", bool tools = false, bool vision = false)

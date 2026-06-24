@@ -1,6 +1,7 @@
 using Blaze.LlmGateway.Core.Catalog;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
+using Blaze.LlmGateway.Core.Routing;
 using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.ContextHandling;
 using Blaze.LlmGateway.Infrastructure.ModelCatalog;
@@ -81,6 +82,9 @@ public sealed class ModelSelectionResolver(
                     "Virtual model {ModelId} has CatalogModel={CatalogModel}; routing through provider catalog",
                     modelId, vmOptions.CatalogModel);
 
+                if (gatewayOptions.Value.VerboseRouteLogging)
+                    RouterLog.Write(logger, new RouterSelectEvent(modelId, "catalog-delegate", $"catalog:{vmOptions.CatalogModel}"));
+
                 var deployment = catalogModelRouter.SelectDeployment(
                     vmOptions.CatalogModel,
                     new RoutingContext(modelId, 0, false, false, false, cancellationToken));
@@ -96,6 +100,10 @@ public sealed class ModelSelectionResolver(
                         logger.LogDebug(
                             "Resolved virtual model {ModelId} to catalog deployment {Deployment} ({Provider})",
                             modelId, deployment.Name, deployment.Provider);
+
+                        if (gatewayOptions.Value.VerboseRouteLogging)
+                            RouterLog.Write(logger, new RouterDeployEvent(deployment.Name, $"catalog route: {vmOptions.CatalogModel}", 0));
+
                         return client;
                     }
 

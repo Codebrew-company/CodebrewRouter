@@ -3,6 +3,7 @@ using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Blaze.LlmGateway.Tests.Catalog;
 
@@ -68,7 +69,8 @@ public sealed class CatalogModelRouterTests
         return new CatalogModelRouter(
             cat,
             resolver,
-            NullLogger<CatalogModelRouter>.Instance);
+            NullLogger<CatalogModelRouter>.Instance,
+            Options.Create(new LlmGatewayOptions()));
     }
 
     private static RoutingContext Ctx(
@@ -232,7 +234,8 @@ public sealed class CatalogModelRouterTests
             new CatalogModelRouter(
                 null!,
                 new RoutingStrategyResolver(CreateCatalog()),
-                NullLogger<CatalogModelRouter>.Instance));
+                NullLogger<CatalogModelRouter>.Instance,
+                Options.Create(new LlmGatewayOptions())));
 
     [Fact]
     public void Constructor_ThrowsOnNullStrategyResolver()
@@ -240,7 +243,8 @@ public sealed class CatalogModelRouterTests
             new CatalogModelRouter(
                 CreateCatalog(),
                 null!,
-                NullLogger<CatalogModelRouter>.Instance));
+                NullLogger<CatalogModelRouter>.Instance,
+                Options.Create(new LlmGatewayOptions())));
 
     [Fact]
     public void SelectDeployment_ThrowsOnNullRouteName()

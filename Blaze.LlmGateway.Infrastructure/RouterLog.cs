@@ -21,6 +21,12 @@ public static class RouterLog
             RouterExhaustedEvent      => "[ROUTER-EXHAUSTED]",
             RouterMidstreamFailEvent  => "[ROUTER-MIDSTREAM-FAIL]",
             RouterStreamCompleteEvent => "[ROUTER-STREAM-COMPLETE]",
+            RouterSelectEvent         => "[ROUTER-SELECT]",
+            RouterDeployEvent         => "[ROUTER-DEPLOY]",
+            RouterHealthEvent         => "[ROUTER-HEALTH]",
+            RouterFallbackEvent       => "[ROUTER-FALLBACK]",
+            RouterFusionEvent         => "[ROUTER-FUSION]",
+            RouterFusionResultEvent   => "[ROUTER-FUSION-RESULT]",
             _ => "[ROUTER-UNKNOWN]"
         };
 

@@ -83,6 +83,19 @@ public sealed class CodebrewRouterChatClient(
         Log(new RouterResolveEvent(
             taskType.ToString(), tokenCount, providers.Length, chain, resolveSw.ElapsedMilliseconds));
 
+        // Verbose: log what classification determined and which strategy is being used
+        if (GatewayOptions.VerboseRouteLogging)
+        {
+            var strategy = activeOptions.ModelId.Equals("fusion", StringComparison.OrdinalIgnoreCase)
+                ? "fusion" : "auto-fallback";
+            RouterLog.Write(logger, new RouterSelectEvent(activeOptions.ModelId, taskType.ToString(), strategy));
+
+            if (activeOptions.ModelId.Equals("fusion", StringComparison.OrdinalIgnoreCase))
+            {
+                RouterLog.Write(logger, new RouterFusionEvent(providers, providers.Length > 0 ? ModelName(providers[0]) : "auto-judge"));
+            }
+        }
+
         var providerFailures = new List<string>();
         for (var i = 0; i < providers.Length; i++)
         {
@@ -92,6 +105,8 @@ public sealed class CodebrewRouterChatClient(
             if (client is null)
             {
                 Log(new RouterSkipEvent(i + 1, key, model, 0, 0, "not_registered"));
+                if (GatewayOptions.VerboseRouteLogging)
+                    RouterLog.Write(logger, new RouterFallbackEvent(key, "(none)", "not_registered", i + 1));
                 providerFailures.Add($"{key}: provider is not registered.");
                 continue;
             }
@@ -99,6 +114,8 @@ public sealed class CodebrewRouterChatClient(
             var providerMessages = await PrepareMessagesForProviderAsync(i + 1, key, cleanedMessages, activeOptions, options, cancellationToken);
             if (providerMessages is null)
             {
+                if (GatewayOptions.VerboseRouteLogging)
+                    RouterLog.Write(logger, new RouterFallbackEvent(key, "(none)", "context_too_large", i + 1));
                 providerFailures.Add($"{key}: context is too large for the provider.");
                 continue;
             }
@@ -116,6 +133,9 @@ public sealed class CodebrewRouterChatClient(
                     (int?)response.Usage?.InputTokenCount,
                     (int?)response.Usage?.OutputTokenCount,
                     attemptSw.ElapsedMilliseconds));
+
+                if (GatewayOptions.VerboseRouteLogging && activeOptions.ModelId.Equals("fusion", StringComparison.OrdinalIgnoreCase))
+                    RouterLog.Write(logger, new RouterFusionResultEvent(model, $"selected provider {key} at attempt {i + 1}"));
 
                 return response;
             }
@@ -214,6 +234,9 @@ public sealed class CodebrewRouterChatClient(
 
             Log(new RouterSuccessEvent(
                 i + 1, key, model, taskType.ToString(), null, null, null, chunkSw.ElapsedMilliseconds));
+
+            if (GatewayOptions.VerboseRouteLogging && activeOptions.ModelId.Equals("fusion", StringComparison.OrdinalIgnoreCase))
+                RouterLog.Write(logger, new RouterFusionResultEvent(model, $"selected provider {key} at attempt {i + 1}"));
 
             yield return result.FirstChunk;
 

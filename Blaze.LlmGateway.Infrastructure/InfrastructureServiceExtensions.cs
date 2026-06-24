@@ -343,7 +343,11 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IRoutingStrategyResolver, RoutingStrategyResolver>();
 
         // Register catalog model router for virtual model binding (Phase 2)
-        services.AddSingleton<CatalogModelRouter>();
+        services.AddSingleton(sp => new CatalogModelRouter(
+            sp.GetRequiredService<IProviderCatalog>(),
+            sp.GetRequiredService<IRoutingStrategyResolver>(),
+            sp.GetRequiredService<ILogger<CatalogModelRouter>>(),
+            sp.GetRequiredService<IOptions<LlmGatewayOptions>>()));
 
         // Register health probe background service (Phase 3)
         services.AddHostedService<HealthProbeService>();

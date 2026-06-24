@@ -1,6 +1,9 @@
 using Blaze.LlmGateway.Core.Catalog;
+using Blaze.LlmGateway.Core.Configuration;
+using Blaze.LlmGateway.Core.Routing;
 using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Blaze.LlmGateway.Infrastructure.Catalog;
 
@@ -16,15 +19,21 @@ public sealed class CatalogModelRouter
     private readonly IProviderCatalog _catalog;
     private readonly IRoutingStrategyResolver _strategyResolver;
     private readonly ILogger<CatalogModelRouter> _logger;
+    private readonly LlmGatewayOptions _options;
 
     public CatalogModelRouter(
         IProviderCatalog catalog,
         IRoutingStrategyResolver strategyResolver,
-        ILogger<CatalogModelRouter> logger)
+        ILogger<CatalogModelRouter> logger,
+        IOptions<LlmGatewayOptions> options)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _strategyResolver = strategyResolver ?? throw new ArgumentNullException(nameof(strategyResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+
+        HealthAwareRoutingFilter.Logger = _options.VerboseRouteLogging ? _logger : null;
+        HealthAwareRoutingFilter.VerboseLoggingEnabled = _options.VerboseRouteLogging;
     }
 
     /// <summary>
@@ -66,6 +75,8 @@ public sealed class CatalogModelRouter
                 "Selected deployment {DeploymentName} for catalog model {CatalogModelName} via primary pool",
                 selected.Name,
                 catalogModelName);
+
+            LogDeployVerbose(selected, "primary pool", primaryDeployments.Count);
             return selected;
         }
 
@@ -77,6 +88,8 @@ public sealed class CatalogModelRouter
                 catalogModelName,
                 route.Fallbacks.Length);
 
+            LogFallbackVerbose("primary pool", "fallback pool", "no healthy primary deployment available", 1);
+
             var fallbackDeployments = ResolveDeployments(route.Fallbacks);
             selected = strategy.Select(fallbackDeployments, context);
 
@@ -86,6 +99,8 @@ public sealed class CatalogModelRouter
                     "Selected fallback deployment {DeploymentName} for catalog model {CatalogModelName}",
                     selected.Name,
                     catalogModelName);
+
+                LogDeployVerbose(selected, "fallback pool", fallbackDeployments.Count);
                 return selected;
             }
         }
@@ -94,6 +109,18 @@ public sealed class CatalogModelRouter
             "No suitable deployment found for catalog model {CatalogModelName} after primary and fallback pools",
             catalogModelName);
         return null;
+    }
+
+    private void LogDeployVerbose(ProviderDeployment selected, string pool, int candidateCount)
+    {
+        if (!_options.VerboseRouteLogging) return;
+        RouterLog.Write(_logger, new RouterDeployEvent(selected.Name, pool, candidateCount));
+    }
+
+    private void LogFallbackVerbose(string from, string to, string reason, int attempt)
+    {
+        if (!_options.VerboseRouteLogging) return;
+        RouterLog.Write(_logger, new RouterFallbackEvent(from, to, reason, attempt));
     }
 
     private IReadOnlyList<ProviderDeployment> ResolveDeployments(string[] deploymentNames)
