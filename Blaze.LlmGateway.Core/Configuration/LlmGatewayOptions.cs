@@ -27,6 +27,8 @@ public class ProvidersOptions
     public OllamaRouterOptions OllamaRouter { get; set; } = new();
     public LmStudioOptions LmStudio { get; set; } = new();
     public OpenCodeGoOptions OpenCodeGo { get; set; } = new();
+    public DerpYardlyOptions DerpYardly { get; set; } = new();
+    public HermesProviderOptions Hermes { get; set; } = new();
 }
 
 public class OllamaRouterOptions
@@ -96,4 +98,13 @@ public class ModelAvailabilityOptions
     public bool Enabled { get; set; } = true;
     public int StartupProbeTimeoutSeconds { get; set; } = 2;
     public int RefreshIntervalSeconds { get; set; } = 60;
+}
+
+public class DerpYardlyOptions
+{
+    public string Endpoint { get; set; } = "http://127.0.0.1:8651/v1";
+    public string Model { get; set; } = "derp-yardly";
+    public string ApiKey { get; set; } = "";
+    public int MaxContextTokens { get; set; } = 32768;
+    public int ReservedOutputTokens { get; set; } = 2048;
 }

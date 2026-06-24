@@ -34,6 +34,15 @@ public static class AppHostComposition
             "local-model");
         var openCodeGoApiKey = builder.Configuration.GetValue<string>(
             "LlmGateway:Providers:OpenCodeGo:ApiKey") ?? "";
+        var derpYardlyEndpoint = builder.Configuration.GetValue(
+            "LlmGateway:Providers:DerpYardly:Endpoint",
+            "http://127.0.0.1:8651/v1");
+        var derpYardlyModel = builder.Configuration.GetValue(
+            "LlmGateway:Providers:DerpYardly:Model",
+            "derp-yardly");
+        var derpYardlyApiKey = builder.Configuration.GetValue(
+            "LlmGateway:Providers:DerpYardly:ApiKey",
+            "973622463c157c21602790ecc522f95a62e7e9ea1904f877d2f2e2f3c23ea2f0");
         var localInferenceModelPath = builder.Configuration.GetValue<string>(
             "LlmGateway:LocalInference:ModelPath") ?? "";
         var localInferenceCacheDirectory = builder.Configuration.GetValue<string>(
@@ -67,6 +76,9 @@ public static class AppHostComposition
             .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Model", lmStudioModel)
             .WithEnvironment("LlmGateway__Providers__OpenCodeGo__ApiKey", openCodeGoApiKey)
+            .WithEnvironment("LlmGateway__Providers__DerpYardly__Endpoint", derpYardlyEndpoint)
+            .WithEnvironment("LlmGateway__Providers__DerpYardly__Model", derpYardlyModel)
+            .WithEnvironment("LlmGateway__Providers__DerpYardly__ApiKey", derpYardlyApiKey)
             .WithEnvironment("LlmGateway__LocalInference__ModelPath", localInferenceModelPath)
             .WithEnvironment("LlmGateway__LocalInference__CacheDirectory", localInferenceCacheDirectory)
             .WithEnvironment("LlmGateway__LocalInference__DownloadTimeoutSeconds", localInferenceDownloadTimeoutSeconds.ToString())

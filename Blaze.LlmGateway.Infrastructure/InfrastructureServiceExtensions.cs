@@ -1,4 +1,5 @@
 using Blaze.LlmGateway.Core;
+using System.Linq;
 using Blaze.LlmGateway.Core.Catalog;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
@@ -81,6 +82,39 @@ public static class InfrastructureServiceExtensions
             }
         });
 
+        // DerpYardly — local OpenAI-compatible endpoint exposed by the derp-yardly profile gateway.
+        services.AddKeyedSingleton<IChatClient>("DerpYardly", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.DerpYardly;
+            var log = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+            var logMock = sp.GetRequiredService<ILogger<MockChatClient>>();
+            
+            log.LogDebug("Initializing DerpYardly keyed client: {Endpoint}/{Model}", opts.Endpoint, opts.Model);
+            
+            try
+            {
+                var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                var compactor     = sp.GetRequiredService<IContextCompactor>();
+                var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
+                var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+                var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
+                var client = new OpenAIClient(
+                    new ApiKeyCredential(apiKey),
+                    new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+                return client.GetChatClient(opts.Model).AsIChatClient()
+                    .AsBuilder()
+                    .UseFunctionInvocation()
+                    .UseContextSizing(tokenCounter, compactor, sizingOptions,
+                        opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
+                    .Build();
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "⚠️ Failed to initialize DerpYardly client; using MockChatClient for testing");
+                return new MockChatClient(logMock);
+            }
+        });
+
         // ── OpenCode Go — cloud provider with 14 models ───────────────
         // Register one shared OpenAIClient (single HTTP connection pool) and
         // 14 keyed IChatClient wrappers that resolve it per-model.
@@ -119,6 +153,68 @@ public static class InfrastructureServiceExtensions
                         opts.MaxContextTokens, opts.ReservedOutputTokens, modelName, sizingLoggerOcg)
                     .Build();
             });
+        }
+
+        // ── Hermes Profiles — local agent gateways on :8642-:8650 ────────
+        using (var spTemp = services.BuildServiceProvider())
+        {
+            var gatewayOptions = spTemp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+            var hermesOpts = gatewayOptions.Providers.Hermes;
+            var tokenCounter = default(Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter);
+            var compactor = default(IContextCompactor);
+            IOptions<ContextSizingOptions>? sizingOptions = null;
+            ILogger<ContextHandling.ContextSizingChatClient>? sizingLogger = null;
+            var logMock = default(ILogger<MockChatClient>);
+
+            foreach (var (profileName, profileOpts) in hermesOpts.Profiles)
+            {
+                if (!profileOpts.Enabled) continue;
+
+                var key = $"Hermes_{ToPascalCase(profileName)}";
+
+                services.AddKeyedSingleton<IChatClient>(key, (sp, _) =>
+                {
+                    var currentGatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+                    var currentHermesOpts = currentGatewayOpts.Providers.Hermes;
+                    
+                    if (!currentHermesOpts.Profiles.TryGetValue(profileName, out var currentProfileOpts) || !currentProfileOpts.Enabled)
+                    {
+                        logMock ??= sp.GetRequiredService<ILogger<MockChatClient>>();
+                        return new MockChatClient(logMock);
+                    }
+
+                    tokenCounter ??= sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                    compactor ??= sp.GetRequiredService<IContextCompactor>();
+                    sizingOptions ??= sp.GetRequiredService<IOptions<ContextSizingOptions>>();
+                    sizingLogger ??= sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+
+                    var endpoint = currentProfileOpts.Endpoint;
+                    if (string.IsNullOrWhiteSpace(endpoint))
+                    {
+                        var host = currentProfileOpts.Host ?? currentHermesOpts.Host;
+                        endpoint = $"http://{host}:{currentProfileOpts.Port}/v1";
+                    }
+
+                    var apiKey = currentProfileOpts.ApiKey ?? currentHermesOpts.ApiKey;
+                    if (string.IsNullOrWhiteSpace(apiKey))
+                    {
+                        apiKey = "notneeded";
+                    }
+                    var maxCtx = currentProfileOpts.MaxContextTokens ?? currentHermesOpts.MaxContextTokens;
+                    var modelName = currentProfileOpts.Model ?? "hermes-gateway";
+
+                    var client = new OpenAIClient(
+                        new ApiKeyCredential(apiKey),
+                        new OpenAIClientOptions { Endpoint = new Uri(endpoint) });
+
+                    return client.GetChatClient(modelName).AsIChatClient()
+                        .AsBuilder()
+                        .UseFunctionInvocation()
+                        .UseContextSizing(tokenCounter, compactor, sizingOptions,
+                            maxCtx, currentHermesOpts.ReservedOutputTokens, modelName, sizingLogger)
+                        .Build();
+                });
+            }
         }
 
         // Mock client for testing when infrastructure is unavailable
@@ -268,6 +364,17 @@ public static class InfrastructureServiceExtensions
         {
             var keywordFallback = sp.GetRequiredService<KeywordRoutingStrategy>();
             var logger = sp.GetRequiredService<ILogger<OllamaMetaRoutingStrategy>>();
+            var gatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+
+            if (gatewayOpts.LocalInference.Enabled)
+            {
+                var localGemma = sp.GetKeyedService<IChatClient>("LocalGemma");
+                if (localGemma is not null)
+                {
+                    logger.LogInformation("✅ LocalGemma available; using meta-routing strategy powered by local Gemma 4");
+                    return new OllamaMetaRoutingStrategy(localGemma, keywordFallback, logger);
+                }
+            }
             
             // ⚠️ TEMPORARY: Skip OllamaRouter due to Ollama .12 hanging on inference requests
             // Until Ollama is fixed/restarted, use keyword-only routing to avoid 10+ second hangs
@@ -366,7 +473,7 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IOptions<ContextSizingOptions>>(sp =>
             Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.ContextSizing));
 
-        // Prompt cleaner: Gemma-backed with cached OllamaRouter client
+        // Prompt cleaner: Gemma-backed with cached LocalGemma or OllamaRouter client
         // The cleaner is invoked by CodebrewRouterChatClient before classification and before the downstream LLM call.
         services.AddSingleton<IPromptCleaner>(sp =>
         {
@@ -377,14 +484,22 @@ public static class InfrastructureServiceExtensions
                 return new NoopPromptCleaner();
             }
 
-            var ollamaRouter = sp.GetKeyedService<IChatClient>("OllamaRouter");
-            if (ollamaRouter is null)
+            var gatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+            IChatClient? router = null;
+            if (gatewayOpts.LocalInference.Enabled)
+            {
+                router = sp.GetKeyedService<IChatClient>("LocalGemma");
+            }
+
+            router ??= sp.GetKeyedService<IChatClient>("OllamaRouter");
+
+            if (router is null)
             {
                 return new NoopPromptCleaner();
             }
 
             return new GemmaPromptCleaner(
-                ollamaRouter,
+                router,
                 sp.GetRequiredService<IOptions<PromptCleanupOptions>>(),
                 sp.GetRequiredService<ILogger<GemmaPromptCleaner>>());
         });
@@ -411,7 +526,7 @@ public static class InfrastructureServiceExtensions
                 sp.GetRequiredService<ILogger<ContextCompactor>>());
         });
 
-        // Task classifier: Ollama-backed with keyword fallback (zero-latency on Ollama outage)
+        // Task classifier: Ollama/Gemma-backed with keyword fallback (zero-latency on Ollama outage)
         services.AddSingleton<ITaskClassifier>(sp =>
         {
             var classificationOptions = sp.GetRequiredService<IOptions<TaskClassificationOptions>>().Value;
@@ -420,11 +535,19 @@ public static class InfrastructureServiceExtensions
                 return new KeywordTaskClassifier(sp.GetRequiredService<ILogger<KeywordTaskClassifier>>());
             }
 
-            var ollamaRouter = sp.GetKeyedService<IChatClient>("OllamaRouter");
-            if (ollamaRouter is not null)
+            var gatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+            IChatClient? router = null;
+            if (gatewayOpts.LocalInference.Enabled)
+            {
+                router = sp.GetKeyedService<IChatClient>("LocalGemma");
+            }
+
+            router ??= sp.GetKeyedService<IChatClient>("OllamaRouter");
+
+            if (router is not null)
             {
                 return new OllamaTaskClassifier(
-                    ollamaRouter,
+                    router,
                     sp.GetRequiredService<IOptions<TaskClassificationOptions>>(),
                     sp.GetRequiredService<ILogger<OllamaTaskClassifier>>());
             }
@@ -459,4 +582,12 @@ public static class InfrastructureServiceExtensions
         => isConfigured ? sp.GetKeyedService<IChatClient>(key) : null;
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private static string ToPascalCase(string profileName)
+    {
+        return string.Concat(profileName.Split('-', '_')
+            .Select(static word => word.Length > 0
+                ? char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()
+                : ""));
+    }
 }

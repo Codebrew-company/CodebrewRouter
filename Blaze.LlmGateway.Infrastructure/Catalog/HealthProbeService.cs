@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Net.Http;
 
 namespace Blaze.LlmGateway.Infrastructure.Catalog;
 
@@ -19,6 +20,8 @@ public sealed class HealthProbeService : BackgroundService
     private readonly IProviderCatalog _catalog;
     private readonly IServiceProvider _serviceProvider;
     private readonly ProviderCatalogOptions _options;
+    private readonly LlmGatewayOptions? _gatewayOptions;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly ILogger<HealthProbeService> _logger;
 
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
@@ -27,6 +30,17 @@ public sealed class HealthProbeService : BackgroundService
         IProviderCatalog catalog,
         IServiceProvider serviceProvider,
         IOptions<ProviderCatalogOptions> options,
+        ILogger<HealthProbeService> logger)
+        : this(catalog, serviceProvider, options, null, null, logger)
+    {
+    }
+
+    public HealthProbeService(
+        IProviderCatalog catalog,
+        IServiceProvider serviceProvider,
+        IOptions<ProviderCatalogOptions> options,
+        IOptions<LlmGatewayOptions>? gatewayOptions,
+        IHttpClientFactory? httpClientFactory,
         ILogger<HealthProbeService> logger)
     {
         ArgumentNullException.ThrowIfNull(catalog);
@@ -37,6 +51,8 @@ public sealed class HealthProbeService : BackgroundService
         _catalog = catalog;
         _serviceProvider = serviceProvider;
         _options = options.Value;
+        _gatewayOptions = gatewayOptions?.Value;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -104,6 +120,55 @@ public sealed class HealthProbeService : BackgroundService
         ProviderDeployment deployment,
         CancellationToken cancellationToken)
     {
+        if (string.Equals(_options.HealthCheckMethod, "head", StringComparison.OrdinalIgnoreCase))
+        {
+            var endpoint = deployment.Endpoint;
+            if (!string.IsNullOrWhiteSpace(endpoint))
+            {
+                var healthPath = _gatewayOptions?.Providers?.Hermes?.HealthCheckPath ?? "/health";
+                try
+                {
+                    var healthUri = new Uri(new Uri(endpoint), healthPath);
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCts.CancelAfter(ProbeTimeout);
+
+                    using var httpClient = _httpClientFactory?.CreateClient() ?? new HttpClient();
+                    var response = await httpClient.GetAsync(healthUri, timeoutCts.Token);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _catalog.ReportHealth(deployment.Name, healthy: true);
+                        CatalogMetrics.HealthProbesSucceeded.Add(1,
+                            CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
+                        _logger.LogDebug("Health probe (HEAD method via GET request) succeeded for deployment {Deployment}", deployment.Name);
+                        return;
+                    }
+
+                    _catalog.ReportHealth(deployment.Name, healthy: false);
+                    CatalogMetrics.HealthProbesFailed.Add(1,
+                        CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
+                    _logger.LogWarning("Health probe (HEAD method via GET request) returned status code {StatusCode} for deployment {Deployment}", (int)response.StatusCode, deployment.Name);
+                    return;
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _catalog.ReportHealth(deployment.Name, healthy: false);
+                    CatalogMetrics.HealthProbesTimedOut.Add(1,
+                        CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
+                    _logger.LogWarning("Health probe (HEAD method via GET request) timed out for deployment {Deployment}", deployment.Name);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _catalog.ReportHealth(deployment.Name, healthy: false);
+                    CatalogMetrics.HealthProbesFailed.Add(1,
+                        CatalogMetrics.TagsFor(deployment.Name, deployment.Provider, deployment.ModelName).AsSpan());
+                    _logger.LogWarning(ex, "Health probe (HEAD method via GET request) failed for deployment {Deployment}", deployment.Name);
+                    return;
+                }
+            }
+        }
+
         IChatClient? client = null;
 
         try
