@@ -1,0 +1,308 @@
+@inherits LayoutComponentBase
+@using Brew.App.Services
+@using Brew.App.Components
+@inject VoiceService VoiceService
+@implements IDisposable
+
+@* ===== SIDEBAR ===== *@
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <div class="brand">
+            <div class="brand-icon">&lt;/&gt;</div>
+            <div>
+                <div class="brand-text">CodeBrew</div>
+                <div class="brand-sub">AI Code Assistant</div>
+            </div>
+        </div>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section">Assistant</div>
+        <div class="nav-item active"><span class="icon">◆</span> Brew Chat</div>
+        <div class="nav-item"><span class="icon">▸</span> Code Review</div>
+        <div class="nav-item"><span class="icon">◈</span> PR Dashboard</div>
+        <div class="nav-section">Workspace</div>
+        <div class="nav-item"><span class="icon">▣</span> Repositories</div>
+        <div class="nav-item"><span class="icon">▤</span> Terminal</div>
+        <div class="nav-item"><span class="icon">◎</span> Builds</div>
+        <div class="nav-section">Memory</div>
+        <div class="nav-item"><span class="icon">◉</span> Brew's Memory</div>
+        <div class="nav-item"><span class="icon">⚙</span> Settings</div>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="avatar">P</div>
+        <div class="user-info">
+            <div class="user-name">Petey</div>
+            <div class="user-role">Lead Architect</div>
+        </div>
+    </div>
+</aside>
+
+@* ===== MAIN CONTENT ===== *@
+<main class="main">
+    @* ===== TOPBAR ===== *@
+    <div class="topbar">
+        <div class="project-indicator">
+            <span class="repo">CodebrewRouter</span>
+            <span class="sep">/</span>
+            <span class="branch">feat/brew-routing</span>
+        </div>
+        <span class="test-status">574 tests</span>
+        <span class="test-passing">● passing</span>
+        <div class="topbar-spacer"></div>
+        <div class="status-dot"></div>
+        <span class="status-text">Brew online</span>
+    </div>
+
+    @* ===== SPEAR + PANELS ===== *@
+    <div class="spear-container @_spearStateClass">
+        @* 3D Diamond — DiamondCore component wired to VoiceService *@
+        <DiamondCore State="@VoiceService.State" OnClick="@ToggleVoice" />
+
+        @* Speech bubble — SpeechBubble component wired to VoiceService *@
+        <SpeechBubble Text="@_speechText" Visible="@_showSpeech" />
+
+        @* ===== LEFT PANEL ===== *@
+        <div class="left-panel">
+            <div class="brew-ring-container">
+                <div class="brew-ring-outer" @onclick="ToggleVoice">
+                    <div class="brew-ring-hex"></div>
+                    <div class="brew-ring-inner"></div>
+                    <div class="brew-ring-core"></div>
+                    <div class="brew-ring-label">B</div>
+                </div>
+                <div class="brew-prompt">
+                    <div class="brew-greeting">Hey Petey. Brew's online.</div>
+                    <div class="brew-subtitle">CodebrewRouter CI passed. 3 PRs waiting.</div>
+                    <div class="brew-status"><span class="pulse"></span> @GetBrewStatusText()</div>
+                </div>
+            </div>
+
+            @* Transcript *@
+            @if (!string.IsNullOrEmpty(_transcript) || !string.IsNullOrEmpty(_response))
+            {
+                <div class="transcript">
+                    @if (!string.IsNullOrEmpty(_transcript))
+                    {
+                        <div class="user-msg">@_transcript</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_response))
+                    {
+                        <div class="brew-msg">@_response</div>
+                    }
+                </div>
+            }
+
+            @* Quick Actions *@
+            <div class="quick-actions">
+                <span class="action-chip">review PR</span>
+                <span class="action-chip">show backlog</span>
+                <span class="action-chip">fix build</span>
+                <span class="action-chip">infra status</span>
+                <span class="action-chip">what do you remember?</span>
+            </div>
+
+            @* Page body for custom content *@
+            @Body
+        </div>
+
+        @* ===== RIGHT PANEL ===== *@
+        <div class="right-panel">
+            @* CodePanel RenderFragment slot *@
+            @if (CodePanel != null)
+            {
+                @CodePanel
+            }
+            else
+            {
+                @* Default placeholder *@
+                <div class="panel-section">
+                    <div class="panel-header">
+                        <span class="panel-title">Code Context</span>
+                        <span class="panel-badge">LlmRoutingChatClient.cs</span>
+                    </div>
+                    <div class="code-block">
+                        <span class="keyword">public</span> <span class="keyword">async</span> <span class="type">Task</span>&lt;<span class="type">ChatResponse</span>&gt; <span class="function">RouteAsync</span>(
+                            <span class="type">ChatRequest</span> request,
+                            <span class="type">CancellationToken</span> ct)
+                        {
+                            <span class="keyword">var</span> model = <span class="function">ResolveVirtualModel</span>(request.Model);
+                            <span class="keyword">var</span> destination = <span class="function">SelectDestination</span>(model);
+                            <span class="keyword">return</span> <span class="keyword">await</span> <span class="function">ForwardAsync</span>(destination, ct);
+                        }
+                        <span class="comment">// Brew routes through here ↑</span>
+                    </div>
+                </div>
+            }
+
+            @* PR Dashboard placeholder *@
+            <div class="panel-section">
+                <div class="panel-header">
+                    <span class="panel-title">Recent Pull Requests</span>
+                    <span class="panel-badge">5 active</span>
+                </div>
+                <div class="sf-grid">
+                    <div class="sf-grid-header">
+                        <div class="sf-grid-cell" style="flex:2">Repository</div>
+                        <div class="sf-grid-cell" style="flex:3">Title</div>
+                        <div class="sf-grid-cell" style="flex:1">Status</div>
+                        <div class="sf-grid-cell" style="flex:1">Files</div>
+                    </div>
+                    <div class="sf-grid-row">
+                        <div class="sf-grid-cell" style="flex:2">derp-hermes</div>
+                        <div class="sf-grid-cell cell-file" style="flex:3">feat: brew voice service integration</div>
+                        <div class="sf-grid-cell cell-status" style="flex:1">✓ merged</div>
+                        <div class="sf-grid-cell" style="flex:1">+124/-18</div>
+                    </div>
+                    <div class="sf-grid-row">
+                        <div class="sf-grid-cell" style="flex:2">CodebrewRouter</div>
+                        <div class="sf-grid-cell cell-file" style="flex:3">feat: brew virtual model + routing rules</div>
+                        <div class="sf-grid-cell cell-status" style="flex:1">✓ merged</div>
+                        <div class="sf-grid-cell" style="flex:1">+28/-0</div>
+                    </div>
+                    <div class="sf-grid-row">
+                        <div class="sf-grid-cell" style="flex:2">DerpOS</div>
+                        <div class="sf-grid-cell cell-file" style="flex:3">fix: dashboard layout overflow on mobile</div>
+                        <div class="sf-grid-cell cell-warn" style="flex:1">● review</div>
+                        <div class="sf-grid-cell" style="flex:1">+8/-3</div>
+                    </div>
+                    <div class="sf-grid-row">
+                        <div class="sf-grid-cell" style="flex:2">derp-trainer-bot</div>
+                        <div class="sf-grid-cell cell-file" style="flex:3">feat: YouTube ingest retry with exponential backoff</div>
+                        <div class="sf-grid-cell cell-warn" style="flex:1">● review</div>
+                        <div class="sf-grid-cell" style="flex:1">+42/-12</div>
+                    </div>
+                    <div class="sf-grid-row">
+                        <div class="sf-grid-cell" style="flex:2">Yardly</div>
+                        <div class="sf-grid-cell cell-file" style="flex:3">test: add response.v1 integration tests</div>
+                        <div class="sf-grid-cell cell-draft" style="flex:1">○ draft</div>
+                        <div class="sf-grid-cell" style="flex:1">+156/-0</div>
+                    </div>
+                </div>
+            </div>
+
+            @* MemoryPanel RenderFragment slot *@
+            @if (MemoryPanel != null)
+            {
+                @MemoryPanel
+            }
+            else
+            {
+                @* Default memory placeholder *@
+                <div class="panel-section">
+                    <div class="panel-header">
+                        <span class="panel-title">Brew's Memory</span>
+                        <span class="panel-badge">mem0</span>
+                    </div>
+                    <div class="memory-item">
+                        <span class="memory-icon">◆</span>
+                        <span class="memory-text">Brew architecture: Blazor WASM → CodebrewRouter :5000 → Hermes fleet + jarvis_ai voice</span>
+                        <span class="memory-date">2m ago</span>
+                    </div>
+                    <div class="memory-item">
+                        <span class="memory-icon">◆</span>
+                        <span class="memory-text">User prefers voice-first interaction, push-to-talk on desktop</span>
+                        <span class="memory-date">1h ago</span>
+                    </div>
+                    <div class="memory-item">
+                        <span class="memory-icon">◆</span>
+                        <span class="memory-text">Active project: CodebrewRouter, branch feat/brew-routing, 574 tests green</span>
+                        <span class="memory-date">1h ago</span>
+                    </div>
+                    <div class="memory-item">
+                        <span class="memory-icon">◆</span>
+                        <span class="memory-text">Brainstorming protocol: thinker + researcher + lead + server simultaneously</span>
+                        <span class="memory-date">3h ago</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</main>
+
+@* Floating Brew FAB *@
+<div class="brew-overlay">
+    <button class="brew-fab" title="Hey Brew" @onclick="ToggleVoice">◆</button>
+</div>
+
+@code {
+    [Parameter]
+    public RenderFragment? CodePanel { get; set; }
+
+    [Parameter]
+    public RenderFragment? MemoryPanel { get; set; }
+
+    private BrewRingState _state = BrewRingState.Idle;
+    private string _transcript = "";
+    private string _response = "";
+    private bool _showSpeech;
+    private string _speechText = "";
+    private string _spearStateClass = "";
+
+    protected override void OnInitialized()
+    {
+        VoiceService.StateChanged += OnStateChanged;
+        VoiceService.TranscriptUpdated += OnTranscript;
+        VoiceService.ResponseUpdated += OnResponse;
+    }
+
+    private async Task ToggleVoice()
+    {
+        await VoiceService.ToggleRecording();
+    }
+
+    private async Task AnimateState(BrewRingState state)
+    {
+        _spearStateClass = state switch
+        {
+            BrewRingState.Listening => "listening",
+            BrewRingState.Thinking => "thinking",
+            BrewRingState.Speaking => "speaking",
+            _ => ""
+        };
+
+        _showSpeech = state != BrewRingState.Idle;
+        _speechText = state switch
+        {
+            BrewRingState.Listening => VoiceService.Transcript,
+            BrewRingState.Thinking => VoiceService.Transcript,
+            BrewRingState.Speaking => VoiceService.Response,
+            _ => ""
+        };
+
+        StateHasChanged();
+    }
+
+    private string GetBrewStatusText() => _state switch
+    {
+        BrewRingState.Idle => "LISTENING — click the hex or say \"Hey Brew\"",
+        BrewRingState.Listening => "HEARING YOU...",
+        BrewRingState.Thinking => "PROCESSING...",
+        BrewRingState.Speaking => "RESPONDING...",
+        _ => "LISTENING — click the hex or say \"Hey Brew\""
+    };
+
+    private void OnStateChanged()
+    {
+        _state = VoiceService.State;
+        InvokeAsync(() => AnimateState(_state));
+    }
+
+    private void OnTranscript(string text)
+    {
+        _transcript = text;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnResponse(string text)
+    {
+        _response = text;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        VoiceService.StateChanged -= OnStateChanged;
+        VoiceService.TranscriptUpdated -= OnTranscript;
+        VoiceService.ResponseUpdated -= OnResponse;
+    }
+}

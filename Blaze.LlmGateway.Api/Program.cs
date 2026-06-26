@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Blaze.LlmGateway.Api;
+using Blaze.LlmGateway.Api.Models;
+using Blaze.LlmGateway.Api.Services;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
@@ -50,6 +52,14 @@ builder.Services.Configure<LlmGatewayOptions>(
     builder.Configuration.GetSection(LlmGatewayOptions.SectionName));
 
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<MemoryService>();
+builder.Services.AddSingleton<MemoryService>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = factory.CreateClient(nameof(MemoryService));
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new MemoryService(httpClient, config);
+});
 builder.Services.AddSingleton<AzureFoundryModelDiscovery>();
 builder.Services.AddSingleton<LmStudioModelDiscovery>();
 builder.Services.AddSingleton<ModelAvailabilityRegistry>();
@@ -177,6 +187,15 @@ builder.Services.AddAIAgent(
 // Configure OpenAPI
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new()
+    {
+        Title = "CodebrewRouter API",
+        Version = "v1",
+        Description = "Single API gateway for Brew, Hermes Fleet, mem0 memory, jarvis_ai voice, and Yardly."
+    });
+});
 
 // Dev-only permissive CORS so playground UIs (Open WebUI, Agent Framework DevUI)
 // running as sibling Aspire resources can call /v1/chat/completions from the browser.
@@ -208,12 +227,14 @@ else
 }
 
 app.MapOpenApi();
-app.MapScalarApiReference("/scalar", options =>
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "CodebrewRouter API v1"));
+app.MapScalarApiReference("/scalar/v1", options =>
 {
-    options.WithTitle("Blaze.LlmGateway API Reference")
+    options.WithTitle("CodebrewRouter API Reference")
         .WithTheme(ScalarTheme.BluePlanet)
         .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-        .AddDocument("v1", "Blaze.LlmGateway API", "/openapi/v1.json", true);
+        .AddDocument("v1", "CodebrewRouter API", "/openapi/v1.json", true);
 });
 
 // Landing page at `/` linking to Swagger, Scalar, raw OpenAPI, and key endpoints.
@@ -253,8 +274,10 @@ const string landingHtml = """
   <section>
     <h2>API docs</h2>
     <ul>
-      <li><a class="card" href="/scalar"><span class="title">Scalar API Reference</span>
-          <span class="path">/scalar</span></a></li>
+      <li><a class="card" href="/swagger"><span class="title">Swagger UI</span>
+          <span class="path">/swagger</span></a></li>
+      <li><a class="card" href="/scalar/v1"><span class="title">Scalar API Reference</span>
+          <span class="path">/scalar/v1</span></a></li>
       <li><a class="card" href="/openapi/v1.json"><span class="title">OpenAPI document (JSON)</span>
           <span class="path">/openapi/v1.json</span></a></li>
     </ul>
@@ -267,7 +290,7 @@ const string landingHtml = """
           <span class="path">List available models</span></a></li>
       <li><a class="card" href="/v1/models/diagnostics"><span class="title">GET /v1/models/diagnostics</span>
           <span class="path">Show provider connectivity and errors</span></a></li>
-      <li><a class="card" href="/scalar#tag/chat"><span class="title">POST /v1/chat/completions</span>
+      <li><a class="card" href="/scalar/v1#tag/chat"><span class="title">POST /v1/chat/completions</span>
           <span class="path">Streaming chat (SSE). Try it in Scalar.</span></a></li>
       <li><a class="card" href="/health"><span class="title">GET /health</span>
           <span class="path">Health probe</span></a></li>
@@ -314,11 +337,80 @@ app.Use(async (context, next) =>
     }
 });
 
-startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json");
-startupLogger.LogInformation("  ├─ Scalar available at /scalar");
+startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json and /swagger/v1/swagger.json");
+startupLogger.LogInformation("  ├─ Swagger UI available at /swagger");
+startupLogger.LogInformation("  ├─ Scalar available at /scalar/v1");
 
 // Register LiteLLM-compatible endpoints  
 app.RegisterLiteLlmEndpoints();
+
+// ── Brew API endpoints (consolidated from Brew.Api) ──
+
+// Health check (same as /health but at the Brew path for compat)
+app.MapGet("/api/health", () => Results.Ok(new { Status = "healthy", Timestamp = DateTime.UtcNow }))
+   .WithTags("Brew")
+   .WithSummary("Health check")
+   .WithDescription("Returns the current health status of the Brew API with a UTC timestamp. Returns {\"status\":\"healthy\",\"timestamp\":\"...\"}.")
+   .Produces(StatusCodes.Status200OK);
+
+// GET /api/memory/all — paginated list of all memories
+app.MapGet("/api/memory/all", async (int? page, int? pageSize, MemoryService memory) =>
+{
+    var result = await memory.GetAllMemories(page ?? 1, pageSize ?? 20);
+    return Results.Ok(result);
+})
+   .WithTags("Brew")
+   .WithSummary("List all memories (paginated)")
+   .WithDescription("Returns a paginated list of all stored memories from mem0. Use query params `page` and `pageSize` to control pagination. Default: page=1, pageSize=20. Returns {\"count\":N,\"results\":[...]}.")
+   .Produces<MemoryGetAllResponse>(StatusCodes.Status200OK);
+
+// GET /api/memory/search?q= — semantic memory search
+app.MapGet("/api/memory/search", async (string q, int? topK, MemoryService memory) =>
+{
+    var results = await memory.SearchMemory(q, topK ?? 5);
+    return Results.Ok(new { query = q, count = results.Count, results });
+})
+   .WithTags("Brew")
+   .WithSummary("Search memories semantically")
+   .WithDescription("Performs a semantic search across stored memories. Requires `q` query parameter. Optional `topK` controls number of results (default: 5). Returns {\"query\":\"...\",\"count\":N,\"results\":[...]}.")
+   .Produces(StatusCodes.Status200OK);
+
+// POST /api/memory — add a new memory
+app.MapPost("/api/memory", async (AddMemoryPayload payload, MemoryService memory) =>
+{
+    var result = await memory.AddMemory(payload.Content, payload.Metadata);
+    return Results.Ok(result);
+})
+   .WithTags("Brew")
+   .WithSummary("Add a new memory")
+   .WithDescription("Stores a new memory entry in mem0. Request body: {\"content\":\"...\",\"metadata\":{...}}. Returns a MemoryResult with eventId and status.")
+   .Accepts<AddMemoryPayload>("application/json")
+   .Produces<MemoryResult>(StatusCodes.Status200OK);
+
+// POST /api/chat — backward-compatibility alias for /v1/chat/completions
+app.MapPost("/api/chat", async (ChatRequest request, IChatClient chatClient) =>
+{
+    var message = request.Messages?.FirstOrDefault()?.Content ?? "";
+    if (string.IsNullOrWhiteSpace(message))
+        return Results.Json(new { error = "empty message" }, statusCode: 400);
+
+    var chatMessages = new List<Microsoft.Extensions.AI.ChatMessage>
+    {
+        new(Microsoft.Extensions.AI.ChatRole.User, message)
+    };
+
+    var response = await chatClient.GetResponseAsync(chatMessages);
+    var content = response?.Text ?? "";
+    return Results.Json(new { content, model = "brew", finish_reason = "stop" });
+})
+   .WithTags("Brew")
+   .WithSummary("Send a chat message through the Brew router")
+   .WithDescription("Routes to optimal Hermes profile based on task classification. Accepts {\"model\":\"brew\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}. Returns {\"content\":\"...\",\"model\":\"brew\",\"finish_reason\":\"stop\"} or {\"error\":\"empty message\"} on 400.")
+   .Accepts<ChatRequest>("application/json")
+   .Produces(StatusCodes.Status200OK)
+   .Produces(StatusCodes.Status400BadRequest);
+
+startupLogger.LogInformation("  ├─ Brew API endpoints: /api/health, /api/memory/*, /api/chat");
 
 if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("LlmGateway:DevUi:Enabled", false))
 {

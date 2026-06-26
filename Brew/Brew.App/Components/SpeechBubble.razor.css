@@ -1,0 +1,87 @@
+/* ============================================
+   SpeechBubble — typing text bubble with diamond tail
+   Ported from mockup-codebrew.html .brew-speech
+   ============================================ */
+
+/* Scoped custom properties */
+:root {
+    --sb-accent-glow: #7170ff;
+    --sb-cyan: #00f0ff;
+    --sb-bg-surface: #191a1b;
+    --sb-text-primary: #f7f8f8;
+    --sb-radius-lg: 12px;
+    --sb-shadow-glow: rgba(113,112,255,0.3);
+    --sb-shadow-cyan: rgba(0,240,255,0.15);
+}
+
+/* ===== Speech bubble container ===== */
+.brew-speech {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(50% + 130px);         /* sits below the diamond */
+    background: #191a1b;
+    border: 1px solid #7170ff;
+    border-radius: 12px;
+    padding: 14px 22px;
+    max-width: 360px;
+    min-width: 200px;
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    box-shadow:
+        0 0 30px rgba(113,112,255,0.3),
+        0 0 60px rgba(0,240,255,0.15);
+}
+
+.brew-speech.active {
+    opacity: 1;
+}
+
+/* ===== Speech text ===== */
+.speech-text {
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    font-size: 15px;
+    color: #f7f8f8;
+    line-height: 1.5;
+    position: relative;
+    z-index: 2;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Diamond prefix styling */
+.speech-prefix {
+    color: #7170ff;
+    font-size: 12px;
+}
+
+/* ===== Blinking cursor ===== */
+.speech-cursor {
+    color: #7170ff;
+    font-weight: 400;
+}
+
+.speech-cursor.blink {
+    animation: cursorBlink 0.8s step-end infinite;
+}
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ===== Diamond tail pointer ===== */
+.speech-tail {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 14px;
+    height: 14px;
+    background: #191a1b;
+    border-right: 1px solid #7170ff;
+    border-bottom: 1px solid #7170ff;
+    z-index: 1;
+}

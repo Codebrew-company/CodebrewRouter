@@ -1,0 +1,93 @@
+@namespace Brew.App.Components
+
+<div class="spear-container @GetStateClass()" @onclick="HandleClick">
+    @* Orbiting ring *@
+    <div class="diamond-ring"></div>
+
+    @* Spear line — vertical glow column behind the diamond *@
+    <div class="spear-line"></div>
+
+    @* Central 3D diamond with </> code mark *@
+    <div class="diamond-wrapper">
+        <svg class="diamond-svg" viewBox="0 0 180 200" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                @* Neon gradient: cyan → violet → white hot center *@
+                <linearGradient id="codeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#00f0ff">
+                        <animate attributeName="stop-color"
+                                 values="#00f0ff;#7170ff;#fff;#7170ff;#00f0ff"
+                                 dur="4s" repeatCount="indefinite" />
+                    </stop>
+                    <stop offset="50%" stop-color="#fff">
+                        <animate attributeName="stop-color"
+                                 values="#fff;#00f0ff;#7170ff;#00f0ff;#fff"
+                                 dur="4s" repeatCount="indefinite" />
+                    </stop>
+                    <stop offset="100%" stop-color="#7170ff">
+                        <animate attributeName="stop-color"
+                                 values="#7170ff;#fff;#00f0ff;#fff;#7170ff"
+                                 dur="4s" repeatCount="indefinite" />
+                    </stop>
+                </linearGradient>
+                @* Multi-layer neon glow filter *@
+                <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="glow1" />
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="glow2" />
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="glow3" />
+                    <feMerge>
+                        <feMergeNode in="glow3" />
+                        <feMergeNode in="glow2" />
+                        <feMergeNode in="glow1" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+
+            @* 3D Diamond geometry — isometric crystal with 6 visible faces *@
+            @* Top half: left face *@
+            <polygon class="diamond-face-left" points="90,20 30,80 90,100" />
+            @* Top half: right face *@
+            <polygon class="diamond-face-right" points="90,20 150,80 90,100" />
+            @* Top half: front face *@
+            <polygon class="diamond-face-front" points="30,80 90,100 150,80" />
+            @* Bottom half: front face *@
+            <polygon class="diamond-face-front" points="30,80 90,160 150,80" />
+            @* Bottom half: left face *@
+            <polygon class="diamond-face-left" points="30,80 90,160 90,100" />
+            @* Bottom half: right face *@
+            <polygon class="diamond-face-right" points="150,80 90,160 90,100" />
+
+            @* Top edges *@
+            <polyline class="diamond-edge-top" points="90,20 30,80 90,100 150,80 90,20" />
+            @* Bottom edges *@
+            <polyline class="diamond-edge-bottom" points="30,80 90,160 150,80" />
+
+            @* </> code mark — three characters that animate individually when speaking *@
+            <text class="code-mark char-left" x="72" y="95">&lt;</text>
+            <text class="code-mark char-slash" x="90" y="95">/</text>
+            <text class="code-mark char-right" x="108" y="95">&gt;</text>
+        </svg>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public BrewRingState State { get; set; } = BrewRingState.Idle;
+
+    [Parameter]
+    public EventCallback OnClick { get; set; }
+
+    private async Task HandleClick()
+    {
+        if (OnClick.HasDelegate)
+            await OnClick.InvokeAsync();
+    }
+
+    private string GetStateClass() => State switch
+    {
+        BrewRingState.Listening => "listening",
+        BrewRingState.Thinking => "thinking",
+        BrewRingState.Speaking => "speaking",
+        _ => "" // idle — no extra class, base styles are the idle look
+    };
+}

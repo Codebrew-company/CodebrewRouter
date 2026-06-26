@@ -1,0 +1,251 @@
+@using Syncfusion.Blazor.Grids
+@using Brew.App.Models
+
+<div class="panel-section">
+    @if (!string.IsNullOrWhiteSpace(CodeSnippet))
+    {
+        <div class="panel-header">
+            <span class="panel-title">💻 Code Context</span>
+            @if (!string.IsNullOrWhiteSpace(CodeFileName))
+            {
+                <span class="panel-badge">@CodeFileName</span>
+            }
+        </div>
+        <pre class="code-block"><code>@((MarkupString)HighlightedCode)</code></pre>
+    }
+
+    @if (PrItems is not null && PrItems.Count > 0)
+    {
+        @if (!string.IsNullOrWhiteSpace(CodeSnippet))
+        {
+            <!-- spacer between sections when both are shown -->
+            <div style="height: 0;"></div>
+        }
+        <div class="sf-grid-wrapper">
+            @if (string.IsNullOrWhiteSpace(CodeSnippet))
+            {
+                <div class="panel-header">
+                    <span class="panel-title">📋 Recent Pull Requests</span>
+                    <span class="panel-badge">@PrItems.Count active</span>
+                </div>
+            }
+            else
+            {
+                <div class="panel-header">
+                    <span class="panel-title">📋 Recent Pull Requests</span>
+                    <span class="panel-badge">@PrItems.Count active</span>
+                </div>
+            }
+            <SfGrid DataSource="@PrItems"
+                    AllowSorting="true"
+                    GridLines="GridLine.Horizontal"
+                    EnableHover="true">
+                <GridColumns>
+                    <GridColumn Field="Repository"
+                                HeaderText="Repository"
+                                Width="140">
+                        <Template>
+                            @{
+                                var item = (context as PrItem);
+                                <span class="cell-repo">@item?.Repository</span>
+                            }
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="Title"
+                                HeaderText="Title"
+                                Width="auto">
+                        <Template>
+                            @{
+                                var item = (context as PrItem);
+                                <span class="cell-title">@item?.Title</span>
+                            }
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="Status"
+                                HeaderText="Status"
+                                Width="100">
+                        <Template>
+                            @{
+                                var item = (context as PrItem);
+                                var statusClass = item?.Status?.ToLower() switch
+                                {
+                                    "merged" => "status-merged",
+                                    "review" => "status-review",
+                                    "draft" => "status-draft",
+                                    _ => ""
+                                };
+                                <span class="@statusClass">@item?.Status</span>
+                            }
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="FilesChanged"
+                                HeaderText="Files"
+                                Width="90">
+                    </GridColumn>
+                </GridColumns>
+            </SfGrid>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Optional code snippet to display with syntax highlighting.
+    /// </summary>
+    [Parameter]
+    public string? CodeSnippet { get; set; }
+
+    /// <summary>
+    /// Optional filename to show in the code context badge.
+    /// </summary>
+    [Parameter]
+    public string? CodeFileName { get; set; }
+
+    /// <summary>
+    /// Optional list of PR items for the data grid.
+    /// </summary>
+    [Parameter]
+    public List<PrItem>? PrItems { get; set; }
+
+    private string HighlightedCode => SyntaxHighlight(CodeSnippet ?? string.Empty);
+
+    private static string SyntaxHighlight(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return string.Empty;
+
+        // C# keywords
+        var keywords = new HashSet<string>
+        {
+            "abstract", "as", "async", "await", "base", "bool", "break", "byte", "case",
+            "catch", "char", "checked", "class", "const", "continue", "decimal", "default",
+            "delegate", "do", "double", "else", "enum", "event", "explicit", "extern",
+            "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit",
+            "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new",
+            "null", "object", "operator", "out", "override", "params", "private", "protected",
+            "public", "readonly", "ref", "return", "sbyte", "sealed", "short", "sizeof",
+            "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+            "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using",
+            "var", "virtual", "void", "volatile", "while", "record", "init", "required",
+            "global", "file", "scoped"
+        };
+
+        // C# built-in types
+        var types = new HashSet<string>
+        {
+            "Task", "CancellationToken", "ChatResponse", "ChatRequest", "string", "int",
+            "bool", "void", "var", "List", "Dictionary", "IEnumerable", "IAsyncEnumerable",
+            "ValueTask", "ActionResult", "IActionResult"
+        };
+
+        var lines = code.Split('\n');
+        var result = new System.Text.StringBuilder();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimStart();
+            var leadingWs = line[..(line.Length - trimmed.Length)];
+
+            // Check if whole line is a comment
+            if (trimmed.StartsWith("//"))
+            {
+                result.Append(System.Net.WebUtility.HtmlEncode(leadingWs));
+                result.Append("<span class=\"comment\">");
+                result.Append(System.Net.WebUtility.HtmlEncode(trimmed));
+                result.Append("</span>\n");
+                continue;
+            }
+
+            result.Append(System.Net.WebUtility.HtmlEncode(leadingWs));
+
+            // Tokenize the rest
+            var remaining = trimmed;
+            var pos = 0;
+
+            while (pos < remaining.Length)
+            {
+                // Strings
+                if (remaining[pos] == '"')
+                {
+                    var end = remaining.IndexOf('"', pos + 1);
+                    if (end == -1) end = remaining.Length - 1;
+                    result.Append("<span class=\"string\">");
+                    result.Append(System.Net.WebUtility.HtmlEncode(remaining[pos..(end + 1)]));
+                    result.Append("</span>");
+                    pos = end + 1;
+                    continue;
+                }
+
+                // Comments mid-line
+                if (pos + 1 < remaining.Length && remaining[pos] == '/' && remaining[pos + 1] == '/')
+                {
+                    result.Append("<span class=\"comment\">");
+                    result.Append(System.Net.WebUtility.HtmlEncode(remaining[pos..]));
+                    result.Append("</span>");
+                    break;
+                }
+
+                // Numbers
+                if (char.IsDigit(remaining[pos]) && (pos == 0 || !char.IsLetterOrDigit(remaining[pos - 1]) && remaining[pos - 1] != '_'))
+                {
+                    var end = pos;
+                    while (end < remaining.Length && (char.IsDigit(remaining[end]) || remaining[end] == '.'))
+                        end++;
+                    result.Append("<span class=\"number\">");
+                    result.Append(System.Net.WebUtility.HtmlEncode(remaining[pos..end]));
+                    result.Append("</span>");
+                    pos = end;
+                    continue;
+                }
+
+                // Identifiers and keywords
+                if (char.IsLetter(remaining[pos]) || remaining[pos] == '_')
+                {
+                    var end = pos;
+                    while (end < remaining.Length && (char.IsLetterOrDigit(remaining[end]) || remaining[end] == '_'))
+                        end++;
+
+                    var word = remaining[pos..end];
+
+                    if (keywords.Contains(word))
+                    {
+                        result.Append("<span class=\"keyword\">");
+                        result.Append(System.Net.WebUtility.HtmlEncode(word));
+                        result.Append("</span>");
+                    }
+                    else if (types.Contains(word))
+                    {
+                        result.Append("<span class=\"type\">");
+                        result.Append(System.Net.WebUtility.HtmlEncode(word));
+                        result.Append("</span>");
+                    }
+                    else if (end < remaining.Length && remaining[end] == '(')
+                    {
+                        result.Append("<span class=\"function\">");
+                        result.Append(System.Net.WebUtility.HtmlEncode(word));
+                        result.Append("</span>");
+                    }
+                    else
+                    {
+                        result.Append(System.Net.WebUtility.HtmlEncode(word));
+                    }
+
+                    pos = end;
+                    continue;
+                }
+
+                // Other characters — HTML-encode
+                result.Append(System.Net.WebUtility.HtmlEncode(remaining[pos].ToString()));
+                pos++;
+            }
+
+            result.Append('\n');
+        }
+
+        // Remove trailing newline
+        if (result.Length > 0 && result[^1] == '\n')
+            result.Length--;
+
+        return result.ToString();
+    }
+}

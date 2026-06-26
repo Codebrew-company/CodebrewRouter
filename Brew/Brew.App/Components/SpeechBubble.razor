@@ -1,0 +1,101 @@
+@namespace Brew.App.Components
+@implements IDisposable
+
+@* ===== Speech Bubble — typing text bubble with diamond tail pointer ===== *@
+@if (Visible)
+{
+    <div class="brew-speech @(_isActive ? "active" : "")">
+        <div class="speech-text">
+            <span class="speech-prefix">◆ </span>@_displayedText
+            <span class="speech-cursor @(_isTyping ? "blink" : "")">▌</span>
+        </div>
+        <div class="speech-tail"></div>
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// The text to display. When changed, the typing animation restarts from the beginning.
+    /// </summary>
+    [Parameter]
+    public string? Text { get; set; }
+
+    /// <summary>
+    /// Whether the speech bubble is visible. When set to true, the bubble fades in
+    /// and typing begins. When set to false, the bubble fades out.
+    /// </summary>
+    [Parameter]
+    public bool Visible { get; set; }
+
+    /// <summary>
+    /// Delay in milliseconds between each character during typing (default: 40ms).
+    /// </summary>
+    [Parameter]
+    public int TypingSpeedMs { get; set; } = 40;
+
+    private string _displayedText = "";
+    private bool _isActive;
+    private bool _isTyping;
+    private CancellationTokenSource? _cts;
+
+    protected override void OnParametersSet()
+    {
+        // Cancel any in-progress typing animation when parameters change
+        CancelTyping();
+
+        if (Visible && !string.IsNullOrEmpty(Text))
+        {
+            _isActive = true;
+            _displayedText = "";
+            _ = BeginTypingAsync();
+        }
+        else
+        {
+            _isActive = false;
+            _displayedText = "";
+        }
+    }
+
+    private async Task BeginTypingAsync()
+    {
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var text = Text ?? "";
+        _isTyping = true;
+
+        try
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                token.ThrowIfCancellationRequested();
+                _displayedText += text[i];
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(TypingSpeedMs, token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Typing was cancelled — clean exit
+        }
+        finally
+        {
+            _isTyping = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CancelTyping()
+    {
+        if (_cts != null)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        CancelTyping();
+    }
+}

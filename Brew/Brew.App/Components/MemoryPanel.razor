@@ -1,0 +1,136 @@
+@using System.Text.Json
+@using Brew.App.Models
+@inject HttpClient Http
+
+<div class="panel-section">
+    <div class="panel-header">
+        <span class="panel-title">🧠 Brew's Memory</span>
+        <span class="panel-badge">mem0</span>
+    </div>
+
+    <div class="memory-search">
+        <input class="memory-search-input"
+               type="text"
+               placeholder="Search memories..."
+               @oninput="OnSearchInput" />
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="memory-empty">Loading...</div>
+    }
+    else if (memories is null || memories.Count == 0)
+    {
+        <div class="memory-empty">No memories yet</div>
+    }
+    else
+    {
+        @foreach (var item in memories)
+        {
+            <div class="memory-item">
+                <span class="memory-icon">◆</span>
+                <span class="memory-text" title="@item.Memory">@item.Memory</span>
+                <span class="memory-date">@FormatTimeAgo(item.CreatedAt)</span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<MemoryItem>? memories;
+    private string searchQuery = string.Empty;
+    private bool isLoading;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllMemories();
+    }
+
+    private async Task LoadAllMemories()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await Http.GetAsync("api/memory/all");
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var results = doc.RootElement.GetProperty("results");
+                memories = JsonSerializer.Deserialize<List<MemoryItem>>(
+                    results.GetRawText(), JsonOptions);
+            }
+            else
+            {
+                memories = new List<MemoryItem>();
+            }
+        }
+        catch
+        {
+            memories = new List<MemoryItem>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SearchMemories(string query)
+    {
+        isLoading = true;
+        try
+        {
+            var encodedQuery = Uri.EscapeDataString(query);
+            var response = await Http.GetAsync($"api/memory/search?q={encodedQuery}");
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var results = doc.RootElement.GetProperty("results");
+                memories = JsonSerializer.Deserialize<List<MemoryItem>>(
+                    results.GetRawText(), JsonOptions);
+            }
+        }
+        catch
+        {
+            memories = new List<MemoryItem>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            await LoadAllMemories();
+        }
+        else
+        {
+            await SearchMemories(searchQuery);
+        }
+    }
+
+    private static string FormatTimeAgo(DateTime? dt)
+    {
+        if (dt is null)
+            return string.Empty;
+
+        var span = DateTime.UtcNow - dt.Value.ToUniversalTime();
+
+        if (span.TotalMinutes < 1) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        if (span.TotalDays < 30) return $"{(int)span.TotalDays}d ago";
+        return dt.Value.ToString("MMM d");
+    }
+}

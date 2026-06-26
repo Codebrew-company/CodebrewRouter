@@ -288,7 +288,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         // Assert
         Assert.True(json.RootElement.TryGetProperty("data", out var data));
 
-        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "LocalGemma", "CodebrewRouter" };
+        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "LocalGemma", "CodebrewRouter", "Hermes" };
 
         foreach (var model in data.EnumerateArray())
         {

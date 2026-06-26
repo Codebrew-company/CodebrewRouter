@@ -1,0 +1,330 @@
+/* ============================================
+   BREW — Dark Cyberpunk Theme
+   ============================================ */
+
+:root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #0f0f1a;
+    --bg-tertiary: #141428;
+    --bg-card: #1a1a2e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #8888aa;
+    --text-muted: #555577;
+    --accent-neon: #00f0ff;
+    --accent-green: #00ff41;
+    --accent-magenta: #ff00ff;
+    --accent-yellow: #ffff00;
+    --accent-red: #ff3333;
+    --border-color: #2a2a4a;
+    --border-glow: #00f0ff88;
+    --font-mono: 'Courier New', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Scanline overlay */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.03) 2px,
+        rgba(0, 0, 0, 0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Links */
+a {
+    color: var(--accent-neon);
+    text-decoration: none;
+    transition: color 0.2s, text-shadow 0.2s;
+}
+a:hover {
+    color: var(--accent-green);
+    text-shadow: 0 0 8px var(--accent-green);
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-mono);
+    color: var(--accent-neon);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid var(--accent-neon);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 10px var(--accent-neon);
+}
+
+h2 {
+    font-size: 1.5rem;
+    color: var(--accent-green);
+    margin-bottom: 0.75rem;
+}
+
+h3 {
+    font-size: 1.2rem;
+    color: var(--accent-neon);
+}
+
+/* Layout */
+.brew-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.brew-topbar {
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.brew-topbar .brew-brand {
+    font-family: var(--font-mono);
+    color: var(--accent-neon);
+    text-shadow: 0 0 10px var(--accent-neon);
+    font-size: 1.1rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+}
+
+.brew-topbar .brew-status {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent-green);
+    text-shadow: 0 0 4px var(--accent-green);
+}
+
+.brew-main {
+    flex: 1;
+    padding: 1.5rem;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* BrewRing logo placeholder */
+.brew-ring {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--accent-neon);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--accent-neon), inset 0 0 6px var(--accent-neon);
+    margin-right: 12px;
+}
+
+.brew-ring .brew-ring-inner {
+    width: 8px;
+    height: 8px;
+    background: var(--accent-neon);
+    border-radius: 50%;
+    animation: brew-pulse 2s infinite;
+    box-shadow: 0 0 8px var(--accent-neon);
+}
+
+@keyframes brew-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.8); }
+}
+
+/* Cards */
+.brew-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.05);
+    transition: box-shadow 0.3s, border-color 0.3s;
+}
+.brew-card:hover {
+    border-color: var(--accent-neon);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.12);
+}
+
+/* Status indicators */
+.status-online {
+    color: var(--accent-green);
+    text-shadow: 0 0 8px var(--accent-green);
+}
+.status-online::before {
+    content: '\25CF ';
+    animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Blinking cursor */
+.cursor::after {
+    content: '\2588';
+    animation: blink 1s step-end infinite;
+    color: var(--accent-neon);
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Buttons */
+.brew-btn {
+    font-family: var(--font-mono);
+    background: transparent;
+    color: var(--accent-neon);
+    border: 1px solid var(--accent-neon);
+    padding: 0.5rem 1.25rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    border-radius: 3px;
+}
+.brew-btn:hover {
+    background: var(--accent-neon);
+    color: var(--bg-primary);
+    box-shadow: 0 0 15px var(--accent-neon);
+}
+
+/* Inputs */
+input, textarea, select {
+    font-family: var(--font-mono);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.6rem 0.9rem;
+    border-radius: 3px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--accent-neon);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-neon);
+}
+
+/* Terminal text */
+.terminal-text {
+    color: var(--accent-neon);
+    font-family: var(--font-mono);
+    white-space: pre;
+    line-height: 1.15;
+    font-size: 11px;
+    text-shadow: 0 0 4px var(--accent-neon);
+}
+
+/* Loading progress (blazor default - themed) */
+.loading-progress {
+    position: absolute;
+    display: block;
+    width: 8rem;
+    height: 8rem;
+    inset: 20vh 0 auto 0;
+    margin: 0 auto 0 auto;
+}
+.loading-progress circle {
+    fill: none;
+    stroke: var(--bg-tertiary);
+    stroke-width: 0.6rem;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+}
+.loading-progress circle:last-child {
+    stroke: var(--accent-neon);
+    stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+    transition: stroke-dasharray 0.05s ease-in-out;
+}
+.loading-progress-text {
+    position: absolute;
+    text-align: center;
+    font-weight: bold;
+    font-family: var(--font-mono);
+    color: var(--accent-neon);
+    inset: calc(20vh + 3.25rem) 0 auto 0.2rem;
+}
+.loading-progress-text:after {
+    content: var(--blazor-load-percentage-text, "Loading");
+}
+
+/* Error UI */
+#blazor-error-ui {
+    color-scheme: dark;
+    background: var(--bg-secondary);
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 240, 255, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    font-family: var(--font-mono);
+    color: var(--accent-red);
+    border-top: 1px solid var(--accent-red);
+}
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.blazor-error-boundary {
+    background: var(--bg-secondary);
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: var(--accent-red);
+    border: 1px solid var(--accent-red);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+}

@@ -1,0 +1,66 @@
+/* CodePanel — ported from mockup-codebrew.html code-block + sf-grid CSS */
+
+/* ===== Code Block ===== */
+.code-block {
+    padding: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-body, #d0d6e0);
+    overflow-x: auto;
+    background: var(--bg-surface, #191a1b);
+    border-radius: 0 0 var(--radius-md, 8px) var(--radius-md, 8px);
+}
+
+.code-block .keyword { color: var(--accent-glow, #7170ff); }
+.code-block .string  { color: var(--brew-green, #30d158); }
+.code-block .comment { color: var(--text-dim, #62666d); font-style: italic; }
+.code-block .function { color: var(--brew-amber, #ff9f0a); }
+.code-block .type    { color: var(--brew-cyan, #00f0ff); }
+.code-block .number  { color: #ff6b9d; }
+
+/* ===== Syncfusion Grid overrides ===== */
+.sf-grid-wrapper {
+    font-size: 12px;
+}
+
+/* Panel section header (for use above grid/code) */
+.panel-section {
+    background: var(--bg-surface, #191a1b);
+    border: 1px solid var(--border-std, rgba(255,255,255,0.08));
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.05));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.panel-title {
+    font-size: 12px;
+    font-weight: 510;
+    color: var(--text-dim, #62666d);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.panel-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background: rgba(94,106,210,0.15);
+    color: var(--accent-glow, #7170ff);
+    font-weight: 510;
+}
+
+/* Status cell colors */
+::deep .status-merged  { color: var(--brew-green, #30d158) !important; font-weight: 510; }
+::deep .status-review  { color: var(--brew-amber, #ff9f0a) !important; font-weight: 510; }
+::deep .status-draft   { color: var(--text-dim, #62666d) !important; }
+::deep .cell-repo      { font-family: 'JetBrains Mono', monospace; }
+::deep .cell-title     { color: var(--accent-glow, #7170ff); cursor: pointer; }
+::deep .cell-title:hover { text-decoration: underline; }

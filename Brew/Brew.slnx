@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Brew.Api/Brew.Api.csproj" />
+  <Project Path="Brew.App/Brew.App.csproj" />
+  <Project Path="Brew.Core/Brew.Core.csproj" />
+</Solution>

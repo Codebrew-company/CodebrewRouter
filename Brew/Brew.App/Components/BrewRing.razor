@@ -1,0 +1,104 @@
+@namespace Brew.App.Components
+
+<div class="brew-ring-container" @onclick="HandleClick" title="@GetStateHint()">
+    <svg class="brew-ring-svg" viewBox="0 0 200 200">
+        @* Outer glow ring *@
+        <circle cx="100" cy="100" r="90"
+                class="ring-outer @GetStateClass()"
+                fill="none"
+                stroke-width="3" />
+
+        @* Middle track ring with dashes *@
+        <circle cx="100" cy="100" r="76"
+                class="ring-track @GetStateClass()"
+                fill="none"
+                stroke-width="2"
+                stroke-dasharray="16 6"
+                stroke-dashoffset="0" />
+
+        @* Inner ring *@
+        <circle cx="100" cy="100" r="62"
+                class="ring-inner @GetStateClass()"
+                fill="none"
+                stroke-width="4" />
+
+        @* Tick marks (12 major, 48 minor = 60 total) *@
+        @for (int i = 0; i < 60; i++)
+        {
+            var isMajor = i % 5 == 0;
+            <line x1="100" y1="@(100 - (isMajor ? 97 : 95))"
+                  x2="100" y2="@(100 - (isMajor ? 84 : 87))"
+                  transform="rotate(@(i * 6), 100, 100)"
+                  class="ring-tick @GetStateClass() @(isMajor ? "tick-major" : "tick-minor")" />
+        }
+
+        @* Core glow *@
+        <circle cx="100" cy="100" r="38"
+                class="ring-core-glow @GetStateClass()"
+                fill="url(#coreGlow)" />
+        <circle cx="100" cy="100" r="18"
+                class="ring-core @GetStateClass()" />
+
+        @* Speaking waveform bars *@
+        @if (State == BrewRingState.Speaking)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                <rect x="@(85 + i * 8)" y="88" width="4" height="24" rx="2"
+                      class="wave-bar wave-bar-@i" />
+            }
+        }
+
+        <defs>
+            <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="var(--accent-neon)" stop-opacity="0.35" />
+                <stop offset="100%" stop-color="var(--accent-neon)" stop-opacity="0" />
+            </radialGradient>
+        </defs>
+    </svg>
+
+    <div class="brew-ring-state-text">
+        <span class="state-label">@GetStateLabel()</span>
+        <span class="state-hint">@GetStateHint()</span>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public BrewRingState State { get; set; } = BrewRingState.Idle;
+
+    [Parameter]
+    public EventCallback OnClick { get; set; }
+
+    private async Task HandleClick()
+    {
+        if (OnClick.HasDelegate)
+            await OnClick.InvokeAsync();
+    }
+
+    private string GetStateClass() => State switch
+    {
+        BrewRingState.Listening => "state-listening",
+        BrewRingState.Thinking => "state-thinking",
+        BrewRingState.Speaking => "state-speaking",
+        _ => "state-idle"
+    };
+
+    private string GetStateLabel() => State switch
+    {
+        BrewRingState.Idle => "STANDBY",
+        BrewRingState.Listening => "LISTENING",
+        BrewRingState.Thinking => "PROCESSING",
+        BrewRingState.Speaking => "SPEAKING",
+        _ => "STANDBY"
+    };
+
+    private string GetStateHint() => State switch
+    {
+        BrewRingState.Idle => "CLICK RING TO BEGIN",
+        BrewRingState.Listening => "HEARING YOU...",
+        BrewRingState.Thinking => "COMPUTING...",
+        BrewRingState.Speaking => "RESPONDING...",
+        _ => "CLICK RING TO BEGIN"
+    };
+}

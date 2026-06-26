@@ -1,0 +1,286 @@
+/* ============================================
+   DiamondCore — 3D Diamond SVG Component
+   Ported from mockup-codebrew.html
+   ============================================ */
+
+/* Color custom properties — scoped to this component */
+.spear-container {
+    --dc-accent: #5e6ad2;
+    --dc-accent-glow: #7170ff;
+    --dc-accent-bright: #828fff;
+    --dc-cyan: #00f0ff;
+    --dc-green: #30d158;
+    --dc-amber: #ff9f0a;
+    --dc-spear-glow: rgba(94,106,210,0.4);
+
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    min-height: 320px;
+    cursor: pointer;
+}
+
+/* ===== Orbiting Ring ===== */
+.diamond-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 240px;
+    height: 240px;
+    border: 1px solid rgba(94,106,210,0.15);
+    border-radius: 50%;
+    animation: ringSpin 8s linear infinite;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.diamond-ring::after {
+    content: '';
+    position: absolute;
+    top: -3px;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    background: var(--dc-cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--dc-cyan);
+}
+
+@keyframes ringSpin {
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* ===== Spear Line ===== */
+.spear-line {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        var(--dc-accent) 15%,
+        var(--dc-cyan) 30%,
+        rgba(130,143,255,0.2) 50%,
+        var(--dc-cyan) 70%,
+        var(--dc-accent) 85%,
+        transparent 100%
+    );
+    z-index: 5;
+    pointer-events: none;
+    animation: spearLinePulse 3s ease-in-out infinite;
+}
+
+@keyframes spearLinePulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* ===== Diamond Wrapper + SVG ===== */
+.diamond-wrapper {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.diamond-svg {
+    width: 280px;
+    height: 310px;
+    filter: drop-shadow(0 0 60px var(--dc-spear-glow))
+            drop-shadow(0 0 120px rgba(0,240,255,0.3));
+    animation: diamondFloat 4s ease-in-out infinite;
+}
+
+@keyframes diamondFloat {
+    0%, 100% { transform: translateY(0) rotateY(0deg); }
+    25% { transform: translateY(-8px) rotateY(5deg); }
+    75% { transform: translateY(6px) rotateY(-5deg); }
+}
+
+/* ===== Diamond Faces — 3D isometric ===== */
+.diamond-face-top {
+    fill: rgba(94,106,210,0.12);
+    stroke: rgba(113,112,255,0.5);
+    stroke-width: 1.2;
+}
+
+.diamond-face-left {
+    fill: rgba(94,106,210,0.22);
+    stroke: rgba(113,112,255,0.6);
+    stroke-width: 1.2;
+}
+
+.diamond-face-right {
+    fill: rgba(113,112,255,0.28);
+    stroke: rgba(130,143,255,0.6);
+    stroke-width: 1.2;
+}
+
+.diamond-face-front {
+    fill: rgba(0,240,255,0.06);
+    stroke: rgba(0,240,255,0.4);
+    stroke-width: 1.2;
+}
+
+.diamond-edge-top {
+    stroke: rgba(130,143,255,0.7);
+    stroke-width: 2;
+    fill: none;
+}
+
+.diamond-edge-bottom {
+    stroke: rgba(0,240,255,0.6);
+    stroke-width: 1.5;
+    fill: none;
+}
+
+/* ===== </> Code Mark — premium neon gradient ===== */
+.code-mark {
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    font-size: 52px;
+    font-weight: 700;
+    fill: url(#codeGradient);
+    text-anchor: middle;
+    dominant-baseline: central;
+    filter: url(#neonGlow);
+    animation: codeMarkPulse 2.5s ease-in-out infinite;
+}
+
+/* Split characters for individual talking animation */
+.char-left  { animation: codeMarkPulse 2.5s ease-in-out infinite; }
+.char-slash { animation: codeMarkPulse 2.5s ease-in-out 0.3s infinite; }
+.char-right { animation: codeMarkPulse 2.5s ease-in-out 0.6s infinite; }
+
+@keyframes codeMarkPulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 1; }
+}
+
+/* ===== STATE: LISTENING (green, fast pulse, responsive) ===== */
+.spear-container.listening .diamond-face-top {
+    fill: rgba(48,209,88,0.15);
+    stroke: rgba(48,209,88,0.5);
+}
+
+.spear-container.listening .diamond-face-left {
+    fill: rgba(48,209,88,0.25);
+    stroke: rgba(48,209,88,0.6);
+}
+
+.spear-container.listening .diamond-face-right {
+    fill: rgba(0,255,136,0.30);
+    stroke: rgba(0,255,136,0.6);
+}
+
+.spear-container.listening .diamond-svg {
+    filter: drop-shadow(0 0 40px rgba(48,209,88,0.5))
+            drop-shadow(0 0 80px rgba(0,255,136,0.3));
+    animation-duration: 1s;
+}
+
+.spear-container.listening .spear-line {
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        var(--dc-green) 15%,
+        #00ff88 50%,
+        var(--dc-green) 85%,
+        transparent 100%
+    );
+    animation-duration: 1s;
+}
+
+/* ===== STATE: THINKING (amber, medium pace, processing) ===== */
+.spear-container.thinking .diamond-face-top {
+    fill: rgba(255,159,10,0.15);
+    stroke: rgba(255,159,10,0.5);
+}
+
+.spear-container.thinking .diamond-face-left {
+    fill: rgba(255,159,10,0.25);
+    stroke: rgba(255,159,10,0.6);
+}
+
+.spear-container.thinking .diamond-face-right {
+    fill: rgba(255,179,64,0.30);
+    stroke: rgba(255,179,64,0.6);
+}
+
+.spear-container.thinking .diamond-svg {
+    filter: drop-shadow(0 0 40px rgba(255,159,10,0.5))
+            drop-shadow(0 0 80px rgba(255,179,64,0.3));
+    animation-duration: 2s;
+}
+
+.spear-container.thinking .spear-line {
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        var(--dc-amber) 15%,
+        #ffb340 50%,
+        var(--dc-amber) 85%,
+        transparent 100%
+    );
+    animation-duration: 2s;
+}
+
+/* ===== STATE: SPEAKING (bright white/cyan, fast, char bounce) ===== */
+.spear-container.speaking .diamond-face-top {
+    fill: rgba(113,112,255,0.2);
+    stroke: rgba(255,255,255,0.6);
+}
+
+.spear-container.speaking .diamond-face-left {
+    fill: rgba(113,112,255,0.3);
+    stroke: rgba(255,255,255,0.7);
+}
+
+.spear-container.speaking .diamond-face-right {
+    fill: rgba(0,240,255,0.35);
+    stroke: rgba(255,255,255,0.7);
+}
+
+.spear-container.speaking .diamond-svg {
+    filter: drop-shadow(0 0 60px rgba(113,112,255,0.6))
+            drop-shadow(0 0 120px rgba(0,240,255,0.4));
+    animation-duration: 0.8s;
+}
+
+.spear-container.speaking .spear-line {
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        var(--dc-accent-glow) 15%,
+        #fff 50%,
+        var(--dc-cyan) 85%,
+        transparent 100%
+    );
+    animation-duration: 0.8s;
+}
+
+/* Talking state — each character bounces like an audio waveform */
+.spear-container.speaking .char-left {
+    animation: charTalk 0.4s ease-in-out infinite;
+}
+
+.spear-container.speaking .char-slash {
+    animation: charTalk 0.35s ease-in-out 0.12s infinite;
+}
+
+.spear-container.speaking .char-right {
+    animation: charTalk 0.45s ease-in-out 0.24s infinite;
+}
+
+@keyframes charTalk {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.7; }
+    25% { transform: translateY(-8px) scale(1.15); opacity: 1; }
+    50% { transform: translateY(-4px) scale(1.05); opacity: 0.9; }
+    75% { transform: translateY(-10px) scale(1.2); opacity: 1; }
+}

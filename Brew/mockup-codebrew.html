@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeBrew — Brew AI Code Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;510;590&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-deep: #08090a;
+  --bg-panel: #0f1011;
+  --bg-surface: #191a1b;
+  --bg-elevated: #222326;
+  --text-primary: #f7f8f8;
+  --text-body: #d0d6e0;
+  --text-muted: #8a8f98;
+  --text-dim: #62666d;
+  --accent: #5e6ad2;
+  --accent-glow: #7170ff;
+  --accent-bright: #828fff;
+  --brew-cyan: #00f0ff;
+  --brew-green: #30d158;
+  --brew-amber: #ff9f0a;
+  --brew-red: #ff3b30;
+  --border-subtle: rgba(255,255,255,0.05);
+  --border-std: rgba(255,255,255,0.08);
+  --border-visible: rgba(255,255,255,0.12);
+  --spear-glow: rgba(94,106,210,0.4);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-body);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  width: 280px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--brew-cyan));
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.brand-text { font-size: 18px; font-weight: 590; color: var(--text-primary); letter-spacing: -0.3px; }
+.brand-sub { font-size: 11px; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+.sidebar-nav { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+
+.nav-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-item:hover { background: rgba(255,255,255,0.03); color: var(--text-body); }
+.nav-item.active { background: rgba(94,106,210,0.12); color: var(--accent-glow); }
+.nav-item .icon { width: 18px; text-align: center; font-size: 15px; }
+
+.nav-section { font-size: 11px; font-weight: 510; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 12px 6px; }
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--brew-cyan));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+}
+.user-info { font-size: 13px; }
+.user-name { color: var(--text-primary); font-weight: 510; }
+.user-role { color: var(--text-dim); font-size: 11px; }
+
+/* ===== MAIN CONTENT ===== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top bar */
+.topbar {
+  height: 52px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 16px;
+}
+
+.project-indicator {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-std);
+}
+.project-indicator .branch { color: var(--brew-green); }
+.project-indicator .repo { color: var(--text-primary); }
+
+.topbar-spacer { flex: 1; }
+
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brew-green); box-shadow: 0 0 6px var(--brew-green); }
+.status-text { font-size: 12px; color: var(--text-dim); }
+
+/* ===== 3D DIAMOND — Central Brew Element ===== */
+.spear-container {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Central 3D diamond with </> symbol */
+.diamond-wrapper {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.diamond-svg {
+  width: 280px;
+  height: 310px;
+  filter: drop-shadow(0 0 60px var(--spear-glow)) drop-shadow(0 0 120px rgba(0,240,255,0.3));
+  animation: diamondFloat 4s ease-in-out infinite;
+}
+
+@keyframes diamondFloat {
+  0%, 100% { transform: translateY(0) rotateY(0deg); }
+  25% { transform: translateY(-8px) rotateY(5deg); }
+  75% { transform: translateY(6px) rotateY(-5deg); }
+}
+
+/* Diamond faces — 3D isometric */
+.diamond-face-top    { fill: rgba(94,106,210,0.12); stroke: rgba(113,112,255,0.5); stroke-width: 1.2; }
+.diamond-face-left   { fill: rgba(94,106,210,0.22); stroke: rgba(113,112,255,0.6); stroke-width: 1.2; }
+.diamond-face-right  { fill: rgba(113,112,255,0.28); stroke: rgba(130,143,255,0.6); stroke-width: 1.2; }
+.diamond-face-front  { fill: rgba(0,240,255,0.06);  stroke: rgba(0,240,255,0.4);  stroke-width: 1.2; }
+.diamond-edge-top    { stroke: rgba(130,143,255,0.7); stroke-width: 2; fill: none; }
+.diamond-edge-bottom { stroke: rgba(0,240,255,0.6); stroke-width: 1.5; fill: none; }
+
+/* </> code mark — premium neon gradient */
+.code-mark {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 52px;
+  font-weight: 700;
+  fill: url(#codeGradient);
+  text-anchor: middle;
+  dominant-baseline: central;
+  filter: url(#neonGlow);
+  animation: codeMarkPulse 2.5s ease-in-out infinite;
+}
+/* Split characters for individual talking animation */
+.char-left  { animation: codeMarkPulse 2.5s ease-in-out infinite; }
+.char-slash { animation: codeMarkPulse 2.5s ease-in-out 0.3s infinite; }
+.char-right { animation: codeMarkPulse 2.5s ease-in-out 0.6s infinite; }
+
+/* Talking state — each character bounces like an audio waveform */
+.spear-container.speaking .char-left  {
+  animation: charTalk 0.4s ease-in-out infinite;
+}
+.spear-container.speaking .char-slash {
+  animation: charTalk 0.35s ease-in-out 0.12s infinite;
+}
+.spear-container.speaking .char-right {
+  animation: charTalk 0.45s ease-in-out 0.24s infinite;
+}
+@keyframes charTalk {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.7; }
+  25% { transform: translateY(-8px) scale(1.15); opacity: 1; }
+  50% { transform: translateY(-4px) scale(1.05); opacity: 0.9; }
+  75% { transform: translateY(-10px) scale(1.2); opacity: 1; }
+}
+
+@keyframes codeMarkPulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+/* Speech bubble */
+.brew-speech {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-glow);
+  border-radius: var(--radius-lg);
+  padding: 14px 22px;
+  max-width: 360px;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+  box-shadow: 0 0 30px rgba(113,112,255,0.3), 0 0 60px rgba(0,240,255,0.15);
+}
+.brew-speech.active { opacity: 1; }
+.brew-speech .speech-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  position: relative;
+  z-index: 2;
+}
+.brew-speech .speech-text::before {
+  content: '◆ ';
+  color: var(--accent-glow);
+  font-size: 12px;
+}
+.brew-speech .speech-tail {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 14px; height: 14px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--accent-glow);
+  border-bottom: 1px solid var(--accent-glow);
+}
+
+/* Vertical spear line — thin glowing column behind the diamond */
+.spear-line {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--accent) 15%,
+    var(--brew-cyan) 30%,
+    rgba(130,143,255,0.2) 50%,
+    var(--brew-cyan) 70%,
+    var(--accent) 85%,
+    transparent 100%
+  );
+  z-index: 5;
+  pointer-events: none;
+  animation: spearLinePulse 3s ease-in-out infinite;
+}
+@keyframes spearLinePulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Orbiting ring */
+.diamond-ring {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 240px; height: 240px;
+  border: 1px solid rgba(94,106,210,0.15);
+  border-radius: 50%;
+  animation: ringSpin 8s linear infinite;
+  z-index: 4;
+}
+.diamond-ring::after {
+  content: '';
+  position: absolute;
+  top: -3px; left: 50%;
+  width: 6px; height: 6px;
+  background: var(--brew-cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--brew-cyan);
+}
+@keyframes ringSpin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* State overrides */
+.spear-container.listening .diamond-face-top    { fill: rgba(48,209,88,0.15); stroke: rgba(48,209,88,0.5); }
+.spear-container.listening .diamond-face-left   { fill: rgba(48,209,88,0.25); stroke: rgba(48,209,88,0.6); }
+.spear-container.listening .diamond-face-right  { fill: rgba(0,255,136,0.30); stroke: rgba(0,255,136,0.6); }
+.spear-container.listening .diamond-svg { filter: drop-shadow(0 0 40px rgba(48,209,88,0.5)) drop-shadow(0 0 80px rgba(0,255,136,0.3)); animation-duration: 1s; }
+.spear-container.listening .spear-line { background: linear-gradient(to bottom, transparent 0%, var(--brew-green) 15%, #00ff88 50%, var(--brew-green) 85%, transparent 100%); animation-duration: 1s; }
+
+.spear-container.thinking .diamond-face-top    { fill: rgba(255,159,10,0.15); stroke: rgba(255,159,10,0.5); }
+.spear-container.thinking .diamond-face-left   { fill: rgba(255,159,10,0.25); stroke: rgba(255,159,10,0.6); }
+.spear-container.thinking .diamond-face-right  { fill: rgba(255,179,64,0.30); stroke: rgba(255,179,64,0.6); }
+.spear-container.thinking .diamond-svg { filter: drop-shadow(0 0 40px rgba(255,159,10,0.5)) drop-shadow(0 0 80px rgba(255,179,64,0.3)); animation-duration: 2s; }
+.spear-container.thinking .spear-line { background: linear-gradient(to bottom, transparent 0%, var(--brew-amber) 15%, #ffb340 50%, var(--brew-amber) 85%, transparent 100%); animation-duration: 2s; }
+
+.spear-container.speaking .diamond-face-top    { fill: rgba(113,112,255,0.2); stroke: rgba(255,255,255,0.6); }
+.spear-container.speaking .diamond-face-left   { fill: rgba(113,112,255,0.3); stroke: rgba(255,255,255,0.7); }
+.spear-container.speaking .diamond-face-right  { fill: rgba(0,240,255,0.35); stroke: rgba(255,255,255,0.7); }
+.spear-container.speaking .diamond-svg { filter: drop-shadow(0 0 60px rgba(113,112,255,0.6)) drop-shadow(0 0 120px rgba(0,240,255,0.4)); animation-duration: 0.8s; }
+.spear-container.speaking .spear-line { background: linear-gradient(to bottom, transparent 0%, var(--accent-glow) 15%, #fff 50%, var(--brew-cyan) 85%, transparent 100%); animation-duration: 0.8s; }
+
+/* ===== LEFT PANEL ===== */
+.left-panel {
+  width: calc(50% - 2px);
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* BrewRing — angular spear-inspired ring */
+.brew-ring-container {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-std);
+}
+
+.brew-ring-outer {
+  width: 80px; height: 80px;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.brew-ring-hex {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  background: var(--bg-elevated);
+  border: 2px solid var(--border-visible);
+  transition: all 0.3s;
+}
+.brew-ring-outer:hover .brew-ring-hex { border-color: var(--accent-glow); box-shadow: 0 0 20px var(--spear-glow); }
+
+.brew-ring-inner {
+  position: absolute;
+  inset: 12px;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  background: linear-gradient(135deg, var(--accent), var(--brew-cyan));
+  opacity: 0.3;
+  transition: opacity 0.3s;
+  animation: innerPulse 2s ease-in-out infinite;
+}
+@keyframes innerPulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.5; }
+}
+
+.brew-ring-core {
+  position: absolute;
+  inset: 24px;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  background: #fff;
+  opacity: 0.15;
+}
+
+.brew-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-glow);
+  text-shadow: 0 0 20px var(--spear-glow);
+  z-index: 2;
+}
+
+.brew-prompt {
+  flex: 1;
+}
+
+.brew-greeting { font-size: 15px; font-weight: 590; color: var(--text-primary); letter-spacing: -0.2px; }
+.brew-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.brew-status { font-size: 11px; color: var(--text-dim); margin-top: 8px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+.brew-status .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--brew-cyan); animation: dotPulse 1.5s infinite; }
+@keyframes dotPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* Transcript area */
+.transcript {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-std);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  min-height: 100px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-body);
+  line-height: 1.6;
+}
+
+.transcript .user-msg { color: var(--brew-cyan); margin-bottom: 8px; }
+.transcript .user-msg::before { content: '▸ '; color: var(--text-dim); }
+.transcript .brew-msg { color: var(--text-primary); margin-bottom: 8px; padding-left: 8px; border-left: 2px solid var(--accent); }
+.transcript .brew-msg::before { content: '◆ '; color: var(--accent-glow); font-size: 10px; }
+
+/* Quick actions */
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-chip {
+  font-size: 12px;
+  font-weight: 400;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-std);
+  background: rgba(255,255,255,0.02);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'JetBrains Mono', monospace;
+}
+.action-chip:hover { border-color: var(--accent); color: var(--accent-glow); background: rgba(94,106,210,0.08); }
+
+/* ===== RIGHT PANEL ===== */
+.right-panel {
+  width: calc(50% - 2px);
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-std);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panel-title { font-size: 12px; font-weight: 510; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+.panel-badge { font-size: 10px; padding: 2px 8px; border-radius: 9999px; background: rgba(94,106,210,0.15); color: var(--accent-glow); font-weight: 510; }
+
+/* Code output */
+.code-block {
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-body);
+  overflow-x: auto;
+}
+.code-block .keyword { color: var(--accent-glow); }
+.code-block .string { color: var(--brew-green); }
+.code-block .comment { color: var(--text-dim); font-style: italic; }
+.code-block .function { color: var(--brew-amber); }
+.code-block .type { color: var(--brew-cyan); }
+.code-block .number { color: #ff6b9d; }
+
+/* Syncfusion Grid placeholder */
+.sf-grid {
+  font-size: 12px;
+}
+.sf-grid-header {
+  display: flex;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-std);
+  font-weight: 510;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.sf-grid-row {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.1s;
+}
+.sf-grid-row:hover { background: rgba(255,255,255,0.02); }
+.sf-grid-cell {
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-status { color: var(--brew-green); }
+.cell-warn { color: var(--brew-amber); }
+.cell-file { color: var(--accent-glow); cursor: pointer; }
+.cell-file:hover { text-decoration: underline; }
+
+/* Memory panel */
+.memory-item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.memory-item:last-child { border-bottom: none; }
+.memory-icon { font-size: 10px; color: var(--accent-glow); flex-shrink: 0; }
+.memory-text { color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.memory-date { color: var(--text-dim); font-size: 10px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+
+/* Floating Brew overlay */
+.brew-overlay {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+}
+
+.brew-fab {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(94,106,210,0.4), 0 0 40px var(--spear-glow);
+  transition: all 0.2s;
+}
+.brew-fab:hover { transform: scale(1.05); box-shadow: 0 6px 30px rgba(94,106,210,0.5), 0 0 60px rgba(0,240,255,0.3); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-std); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-visible); }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="brand">
+      <div class="brand-icon">&lt;/&gt;</div>
+      <div>
+        <div class="brand-text">CodeBrew</div>
+        <div class="brand-sub">AI Code Assistant</div>
+      </div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Assistant</div>
+    <div class="nav-item active"><span class="icon">◆</span> Brew Chat</div>
+    <div class="nav-item"><span class="icon">▸</span> Code Review</div>
+    <div class="nav-item"><span class="icon">◈</span> PR Dashboard</div>
+    <div class="nav-section">Workspace</div>
+    <div class="nav-item"><span class="icon">▣</span> Repositories</div>
+    <div class="nav-item"><span class="icon">▤</span> Terminal</div>
+    <div class="nav-item"><span class="icon">◎</span> Builds</div>
+    <div class="nav-section">Memory</div>
+    <div class="nav-item"><span class="icon">◉</span> Brew's Memory</div>
+    <div class="nav-item"><span class="icon">⚙</span> Settings</div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="avatar">P</div>
+    <div class="user-info">
+      <div class="user-name">Petey</div>
+      <div class="user-role">Lead Architect</div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="project-indicator">
+      <span class="repo">CodebrewRouter</span>
+      <span style="color:var(--text-dim);margin:0 4px;">/</span>
+      <span class="branch">feat/brew-routing</span>
+    </div>
+    <span style="font-size:12px;color:var(--text-dim);">574 tests</span>
+    <span style="font-size:12px;color:var(--brew-green);">● passing</span>
+    <div class="topbar-spacer"></div>
+    <div class="status-dot"></div>
+    <span class="status-text">Brew online</span>
+  </div>
+
+  <!-- Spear + Panels -->
+  <div class="spear-container">
+    <!-- 3D Diamond + Spear Line + Orbiting Ring -->
+    <div class="diamond-ring"></div>
+    <div class="spear-line"></div>
+    <div class="diamond-wrapper">
+      <svg class="diamond-svg" viewBox="0 0 180 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Neon gradient: cyan → violet → white hot center -->
+          <linearGradient id="codeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#00f0ff">
+              <animate attributeName="stop-color" values="#00f0ff;#7170ff;#fff;#7170ff;#00f0ff" dur="4s" repeatCount="indefinite"/>
+            </stop>
+            <stop offset="50%" stop-color="#fff">
+              <animate attributeName="stop-color" values="#fff;#00f0ff;#7170ff;#00f0ff;#fff" dur="4s" repeatCount="indefinite"/>
+            </stop>
+            <stop offset="100%" stop-color="#7170ff">
+              <animate attributeName="stop-color" values="#7170ff;#fff;#00f0ff;#fff;#7170ff" dur="4s" repeatCount="indefinite"/>
+            </stop>
+          </linearGradient>
+          <!-- Multi-layer neon glow filter -->
+          <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="glow1"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="glow2"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="glow3"/>
+            <feMerge>
+              <feMergeNode in="glow3"/>
+              <feMergeNode in="glow2"/>
+              <feMergeNode in="glow1"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <!-- 3D Diamond geometry — isometric crystal with 4 visible faces -->
+        <!-- Top half: left face -->
+        <polygon class="diamond-face-left" points="90,20 30,80 90,100" />
+        <!-- Top half: right face -->
+        <polygon class="diamond-face-right" points="90,20 150,80 90,100" />
+        <!-- Top half: front face -->
+        <polygon class="diamond-face-front" points="30,80 90,100 150,80" />
+        <!-- Bottom half: front face -->
+        <polygon class="diamond-face-front" points="30,80 90,160 150,80" />
+        <!-- Bottom half: left face -->
+        <polygon class="diamond-face-left" points="30,80 90,160 90,100" />
+        <!-- Bottom half: right face -->
+        <polygon class="diamond-face-right" points="150,80 90,160 90,100" />
+        <!-- Top edges -->
+        <polyline class="diamond-edge-top" points="90,20 30,80 90,100 150,80 90,20" />
+        <!-- Bottom edges -->
+        <polyline class="diamond-edge-bottom" points="30,80 90,160 150,80" />
+        <!-- </> code mark — three characters that animate individually when talking -->
+        <text class="code-mark char-left" x="72" y="95">&lt;</text>
+        <text class="code-mark char-slash" x="90" y="95">/</text>
+        <text class="code-mark char-right" x="108" y="95">&gt;</text>
+      </svg>
+    </div>
+    <!-- Speech bubble — appears when Brew is talking -->
+    <div class="brew-speech" id="brewSpeech">
+      <div class="speech-text"></div>
+      <div class="speech-tail"></div>
+    </div>
+
+    <!-- Left Panel -->
+    <div class="left-panel">
+      <!-- BrewRing -->
+      <div class="brew-ring-container">
+        <div class="brew-ring-outer" onclick="toggleSpearState()">
+          <div class="brew-ring-hex"></div>
+          <div class="brew-ring-inner"></div>
+          <div class="brew-ring-core"></div>
+          <div class="brew-ring-label">B</div>
+        </div>
+        <div class="brew-prompt">
+          <div class="brew-greeting">Hey Petey. Brew's online.</div>
+          <div class="brew-subtitle">CodebrewRouter CI passed. 3 PRs waiting.</div>
+          <div class="brew-status"><span class="pulse"></span> LISTENING — click the hex or say "Hey Brew"</div>
+        </div>
+      </div>
+
+      <!-- Transcript -->
+      <div class="transcript">
+        <div class="user-msg">Brew, what's the status of PR #42 in derp-hermes?</div>
+        <div class="brew-msg">PR #42 (derp-hermes): <span style="color:var(--brew-green)">✓ CI passed</span>, derp-codereviewer approved. Ready to merge. 3 files changed, +124 / -18 lines. Want me to merge it?</div>
+        <div class="user-msg">Yeah, merge it. And check why the last CodebrewRouter build took 7 minutes.</div>
+        <div class="brew-msg">Merged ✓. Build analysis: The 7-minute build was caused by a NuGet restore timeout on the `Microsoft.Extensions.AI.Abstractions` package. Network to nuget.org was slow (2.3s latency). Re-running now finished in 18s. Not a code issue.</div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="quick-actions">
+        <span class="action-chip">🔍 review PR</span>
+        <span class="action-chip">📋 show backlog</span>
+        <span class="action-chip">🔧 fix build</span>
+        <span class="action-chip">📊 infra status</span>
+        <span class="action-chip">🧠 what do you remember?</span>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+      <!-- Code Panel -->
+      <div class="panel-section">
+        <div class="panel-header">
+          <span class="panel-title">💻 Code Context</span>
+          <span class="panel-badge">LlmRoutingChatClient.cs</span>
+        </div>
+        <div class="code-block">
+          <span class="keyword">public</span> <span class="keyword">async</span> <span class="type">Task</span>&lt;<span class="type">ChatResponse</span>&gt; <span class="function">RouteAsync</span>(
+              <span class="type">ChatRequest</span> request,
+              <span class="type">CancellationToken</span> ct)
+          {
+              <span class="keyword">var</span> model = <span class="function">ResolveVirtualModel</span>(request.Model);
+              <span class="keyword">var</span> destination = <span class="function">SelectDestination</span>(model);
+              <span class="keyword">return</span> <span class="keyword">await</span> <span class="function">ForwardAsync</span>(destination, ct);
+          }
+          <span class="comment">// Brew routes through here ↑</span>
+        </div>
+      </div>
+
+      <!-- Syncfusion Grid: Recent PRs -->
+      <div class="panel-section">
+        <div class="panel-header">
+          <span class="panel-title">📋 Recent Pull Requests</span>
+          <span class="panel-badge">5 active</span>
+        </div>
+        <div class="sf-grid">
+          <div class="sf-grid-header">
+            <div class="sf-grid-cell" style="flex:2">Repository</div>
+            <div class="sf-grid-cell" style="flex:3">Title</div>
+            <div class="sf-grid-cell" style="flex:1">Status</div>
+            <div class="sf-grid-cell" style="flex:1">Files</div>
+          </div>
+          <div class="sf-grid-row">
+            <div class="sf-grid-cell" style="flex:2">derp-hermes</div>
+            <div class="sf-grid-cell cell-file" style="flex:3">feat: brew voice service integration</div>
+            <div class="sf-grid-cell cell-status" style="flex:1">✓ merged</div>
+            <div class="sf-grid-cell" style="flex:1">+124/-18</div>
+          </div>
+          <div class="sf-grid-row">
+            <div class="sf-grid-cell" style="flex:2">CodebrewRouter</div>
+            <div class="sf-grid-cell cell-file" style="flex:3">feat: brew virtual model + routing rules</div>
+            <div class="sf-grid-cell cell-status" style="flex:1">✓ merged</div>
+            <div class="sf-grid-cell" style="flex:1">+28/-0</div>
+          </div>
+          <div class="sf-grid-row">
+            <div class="sf-grid-cell" style="flex:2">DerpOS</div>
+            <div class="sf-grid-cell cell-file" style="flex:3">fix: dashboard layout overflow on mobile</div>
+            <div class="sf-grid-cell cell-warn" style="flex:1">● review</div>
+            <div class="sf-grid-cell" style="flex:1">+8/-3</div>
+          </div>
+          <div class="sf-grid-row">
+            <div class="sf-grid-cell" style="flex:2">derp-trainer-bot</div>
+            <div class="sf-grid-cell cell-file" style="flex:3">feat: YouTube ingest retry with exponential backoff</div>
+            <div class="sf-grid-cell cell-warn" style="flex:1">● review</div>
+            <div class="sf-grid-cell" style="flex:1">+42/-12</div>
+          </div>
+          <div class="sf-grid-row">
+            <div class="sf-grid-cell" style="flex:2">Yardly</div>
+            <div class="sf-grid-cell cell-file" style="flex:3">test: add response.v1 integration tests</div>
+            <div class="sf-grid-cell" style="flex:1;color:var(--text-dim)">○ draft</div>
+            <div class="sf-grid-cell" style="flex:1">+156/-0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory Panel -->
+      <div class="panel-section">
+        <div class="panel-header">
+          <span class="panel-title">🧠 Brew's Memory</span>
+          <span class="panel-badge">mem0</span>
+        </div>
+        <div class="memory-item">
+          <span class="memory-icon">◆</span>
+          <span class="memory-text">Brew architecture: Blazor WASM → CodebrewRouter :5000 → Hermes fleet + jarvis_ai voice</span>
+          <span class="memory-date">2m ago</span>
+        </div>
+        <div class="memory-item">
+          <span class="memory-icon">◆</span>
+          <span class="memory-text">User prefers voice-first interaction, push-to-talk on desktop</span>
+          <span class="memory-date">1h ago</span>
+        </div>
+        <div class="memory-item">
+          <span class="memory-icon">◆</span>
+          <span class="memory-text">Active project: CodebrewRouter, branch feat/brew-routing, 574 tests green</span>
+          <span class="memory-date">1h ago</span>
+        </div>
+        <div class="memory-item">
+          <span class="memory-icon">◆</span>
+          <span class="memory-text">Brainstorming protocol: thinker + researcher + lead + server simultaneously</span>
+          <span class="memory-date">3h ago</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Floating Brew FAB -->
+<div class="brew-overlay">
+  <button class="brew-fab" title="Hey Brew">◆</button>
+</div>
+
+<script>
+const stateClasses = ['', 'listening', 'thinking', 'speaking'];
+let currentState = 0;
+
+function toggleSpearState() {
+  const container = document.querySelector('.spear-container');
+  container.className = 'spear-container';
+  currentState = (currentState + 1) % 4;
+  if (currentState > 0) {
+    container.classList.add(stateClasses[currentState]);
+    if (currentState === 3) showSpeech(); else hideSpeech();
+    setTimeout(() => { container.className = 'spear-container'; hideSpeech(); }, 5000);
+  }
+}
+
+function showSpeech() {
+  const bubble = document.getElementById('brewSpeech');
+  const text = bubble.querySelector('.speech-text');
+  bubble.classList.add('active');
+  typeText(text, "Hi, my name is Brew, how can I help you?", 40);
+  // Position below the diamond
+  bubble.style.top = 'calc(50% + 130px)';
+}
+
+function hideSpeech() {
+  const bubble = document.getElementById('brewSpeech');
+  bubble.classList.remove('active');
+  bubble.querySelector('.speech-text').textContent = '';
+}
+
+function typeText(el, text, speed) {
+  el.textContent = '';
+  let i = 0;
+  function type() {
+    if (i < text.length) {
+      el.textContent += text.charAt(i);
+      i++;
+      setTimeout(type, speed);
+    }
+  }
+  type();
+}
+
+// Auto-demo: Brew introduces himself after 3 seconds
+setTimeout(() => {
+  const container = document.querySelector('.spear-container');
+  container.className = 'spear-container speaking';
+  showSpeech();
+  setTimeout(() => {
+    container.className = 'spear-container';
+    hideSpeech();
+  }, 5500);
+}, 3000);
+</script>
+
+</body>
+</html>

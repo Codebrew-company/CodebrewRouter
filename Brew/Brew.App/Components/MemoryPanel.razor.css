@@ -1,0 +1,73 @@
+/* MemoryPanel — ported from mockup-codebrew.html memory-item CSS */
+
+/* Inherit panel-section / panel-header / panel-title / panel-badge from CodePanel.razor.css */
+
+/* ===== Search Bar ===== */
+.memory-search {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.05));
+}
+
+.memory-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--bg-elevated, #222326);
+    border: 1px solid var(--border-std, rgba(255,255,255,0.08));
+    border-radius: var(--radius-sm, 4px);
+    color: var(--text-body, #d0d6e0);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.memory-search-input::placeholder {
+    color: var(--text-dim, #62666d);
+}
+
+.memory-search-input:focus {
+    border-color: var(--accent-glow, #7170ff);
+}
+
+/* ===== Memory Item ===== */
+.memory-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.05));
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.memory-item:last-child {
+    border-bottom: none;
+}
+
+.memory-icon {
+    font-size: 10px;
+    color: var(--accent-glow, #7170ff);
+    flex-shrink: 0;
+}
+
+.memory-text {
+    color: var(--text-body, #d0d6e0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.memory-date {
+    color: var(--text-dim, #62666d);
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+}
+
+/* ===== Empty State ===== */
+.memory-empty {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--text-dim, #62666d);
+    font-size: 12px;
+}

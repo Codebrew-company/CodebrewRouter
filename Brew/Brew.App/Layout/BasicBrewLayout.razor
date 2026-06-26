@@ -1,0 +1,74 @@
+@inherits LayoutComponentBase
+@using Brew.App.Services
+@inject VoiceService VoiceService
+@implements IDisposable
+
+<div class="brew-page">
+    <header class="brew-topbar">
+        <div style="display: flex; align-items: center;">
+            <span class="brew-ring">
+                <span class="brew-ring-inner"></span>
+            </span>
+            <span class="brew-brand">BREW</span>
+        </div>
+        <span class="brew-status">SYS.ONLINE <span class="cursor"></span></span>
+    </header>
+
+    <main class="brew-main" style="display: flex; flex-direction: column; align-items: center;">
+        <BrewRing State="@_state" OnClick="ToggleVoice" />
+
+        @if (!string.IsNullOrEmpty(_transcript))
+        {
+            <div class="transcript">@_transcript</div>
+        }
+
+        @if (!string.IsNullOrEmpty(_response))
+        {
+            <div class="response">@_response</div>
+        }
+
+        <div style="margin-top: 1.5rem;">
+            @Body
+        </div>
+    </main>
+</div>
+
+@code {
+    private BrewRingState _state = BrewRingState.Idle;
+    private string _transcript = "";
+    private string _response = "";
+
+    protected override void OnInitialized()
+    {
+        VoiceService.StateChanged += OnStateChanged;
+        VoiceService.TranscriptUpdated += OnTranscript;
+        VoiceService.ResponseUpdated += OnResponse;
+    }
+
+    private async Task ToggleVoice() => await VoiceService.ToggleRecording();
+
+    private void OnStateChanged()
+    {
+        _state = VoiceService.State;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnTranscript(string text)
+    {
+        _transcript = text;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnResponse(string text)
+    {
+        _response = text;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        VoiceService.StateChanged -= OnStateChanged;
+        VoiceService.TranscriptUpdated -= OnTranscript;
+        VoiceService.ResponseUpdated -= OnResponse;
+    }
+}
