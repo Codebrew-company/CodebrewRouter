@@ -405,3 +405,6 @@ FodyWeavers.xsd
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 graphify-out/
+
+# Local runtime job DB
+proxmox-jobs.sqlite3
