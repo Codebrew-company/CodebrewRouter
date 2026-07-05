@@ -376,7 +376,11 @@ public static class InfrastructureServiceExtensions
                 if (localGemma is not null)
                 {
                     logger.LogInformation("✅ LocalGemma available; using meta-routing strategy powered by local Gemma 4");
-                    return new OllamaMetaRoutingStrategy(localGemma, keywordFallback, logger);
+                    return new OllamaMetaRoutingStrategy(
+                        localGemma,
+                        keywordFallback,
+                        logger,
+                        TimeSpan.FromMinutes(gatewayOpts.Routing.CircuitBreakerCooldownMinutes));
                 }
             }
             
@@ -462,6 +466,10 @@ public static class InfrastructureServiceExtensions
         // so CodebrewRouterChatClient can receive IOptions<CodebrewRouterOptions> directly.
         services.AddSingleton<IOptions<CodebrewRouterOptions>>(sp =>
             Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.CodebrewRouter));
+
+        // Same trick for FusionOptions so FusionChatClient can receive it directly.
+        services.AddSingleton<IOptions<FusionOptions>>(sp =>
+            Options.Create(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Fusion));
 
         // Same trick for PromptCleanupOptions so GemmaPromptCleaner can receive it directly.
         services.AddSingleton<IOptions<PromptCleanupOptions>>(sp =>
@@ -578,6 +586,18 @@ public static class InfrastructureServiceExtensions
                 sp.GetRequiredService<IModelAvailabilityRegistry>(),
                 sp,
                 sp.GetRequiredService<ILogger<CodebrewRouterChatClient>>()));
+
+        // fusion keyed client — MoA-Lite mixture-of-agents over the CodebrewRouter pipeline.
+        // Always registered; when LlmGateway:Fusion:Enabled is false it delegates every request
+        // straight to CodebrewRouter, so "fusion" behaves like "auto" until switched on.
+        services.AddKeyedSingleton<IChatClient>("fusion", (sp, _) =>
+            (IChatClient)new FusionChatClient(
+                sp.GetRequiredKeyedService<IChatClient>("CodebrewRouter"),
+                sp.GetRequiredService<ITaskClassifier>(),
+                sp.GetRequiredService<IOptions<FusionOptions>>(),
+                sp.GetRequiredService<IOptions<LlmGatewayOptions>>(),
+                sp,
+                sp.GetRequiredService<ILogger<FusionChatClient>>()));
 
         return services;
     }

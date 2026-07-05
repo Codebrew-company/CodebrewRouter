@@ -1,0 +1,50 @@
+<svg width="100%" viewBox="0 0 680 560" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>CodebrewRouter project and layer architecture</title>
+<desc>The API host exposes the OpenAI-compatible endpoint and admin guard; Infrastructure holds the routing pipeline, fusion client, strategies and keyed providers; Core holds options and domain types; AppHost wires Aspire and secrets; ServiceDefaults holds shared telemetry. Keyed providers fan out to cloud, LAN, and local backends, with Ollama and the Hermes fleet as external systems.</desc>
+<defs>
+<style>
+.blue{fill:#E6F1FB;stroke:#185FA5;stroke-width:0.5}
+.purple{fill:#EEEDFE;stroke:#534AB7;stroke-width:0.5}
+.teal{fill:#E1F5EE;stroke:#0F6E56;stroke-width:0.5}
+.gray{fill:#F1EFE8;stroke:#5F5E5A;stroke-width:0.5}
+.coral{fill:#FAECE7;stroke:#993C1D;stroke-width:0.5}
+.dash{fill:none;stroke:#888;stroke-width:0.5;stroke-dasharray:5 4}
+text{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.th{font-size:14px;font-weight:500;fill:#2C2C2A}
+.ts{font-size:12px;fill:#5F5E5A}
+.lbl{font-size:12px;fill:#5F5E5A}
+</style>
+</defs>
+
+<rect class="dash" x="40" y="44" width="600" height="96" rx="6"/><text class="lbl" x="52" y="62">Api — HTTP host</text>
+<rect class="blue" x="56" y="72" width="180" height="52" rx="4"/><text class="th" x="146" y="94" text-anchor="middle">ChatCompletions</text><text class="ts" x="146" y="110" text-anchor="middle">endpoint, SSE</text>
+<rect class="blue" x="250" y="72" width="180" height="52" rx="4"/><text class="th" x="340" y="94" text-anchor="middle">Protocol mapper</text><text class="ts" x="340" y="110" text-anchor="middle">admin guard, CORS</text>
+<rect class="blue" x="444" y="72" width="180" height="52" rx="4"/><text class="th" x="534" y="94" text-anchor="middle">Program</text><text class="ts" x="534" y="110" text-anchor="middle">DI wiring</text>
+
+<rect class="dash" x="40" y="156" width="600" height="150" rx="6"/><text class="lbl" x="52" y="174">Infrastructure — MEAI pipeline</text>
+<rect class="purple" x="56" y="184" width="180" height="50" rx="4"/><text class="th" x="146" y="205" text-anchor="middle">FusionChatClient</text><text class="ts" x="146" y="221" text-anchor="middle">MoA-Lite</text>
+<rect class="purple" x="250" y="184" width="180" height="50" rx="4"/><text class="th" x="340" y="205" text-anchor="middle">CodebrewRouter</text><text class="ts" x="340" y="221" text-anchor="middle">task routing</text>
+<rect class="purple" x="444" y="184" width="180" height="50" rx="4"/><text class="th" x="534" y="205" text-anchor="middle">Routing strategies</text><text class="ts" x="534" y="221" text-anchor="middle">meta + keyword</text>
+<rect class="purple" x="56" y="244" width="180" height="50" rx="4"/><text class="th" x="146" y="265" text-anchor="middle">Classify + clean</text><text class="ts" x="146" y="281" text-anchor="middle">Ollama + Gemma</text>
+<rect class="purple" x="250" y="244" width="180" height="50" rx="4"/><text class="th" x="340" y="265" text-anchor="middle">Context sizing</text><text class="ts" x="340" y="281" text-anchor="middle">compaction, tokens</text>
+<rect class="coral" x="444" y="244" width="180" height="50" rx="4" stroke-dasharray="4 3"/><text class="th" x="534" y="265" text-anchor="middle">MCP tools</text><text class="ts" x="534" y="281" text-anchor="middle">disabled</text>
+
+<rect class="dash" x="40" y="322" width="288" height="80" rx="6"/><text class="lbl" x="52" y="340">Core</text>
+<rect class="gray" x="56" y="350" width="120" height="40" rx="4"/><text class="th" x="116" y="374" text-anchor="middle">Options</text>
+<rect class="gray" x="190" y="350" width="122" height="40" rx="4"/><text class="th" x="251" y="374" text-anchor="middle">RouteDestination</text>
+
+<rect class="dash" x="352" y="322" width="288" height="80" rx="6"/><text class="lbl" x="364" y="340">AppHost + ServiceDefaults</text>
+<rect class="gray" x="368" y="350" width="120" height="40" rx="4"/><text class="th" x="428" y="374" text-anchor="middle">Aspire, secrets</text>
+<rect class="gray" x="502" y="350" width="122" height="40" rx="4"/><text class="th" x="563" y="374" text-anchor="middle">OTel, resilience</text>
+
+<rect class="dash" x="40" y="418" width="600" height="122" rx="6"/><text class="lbl" x="52" y="436">Keyed providers</text>
+<rect class="teal" x="56" y="446" width="110" height="42" rx="4"/><text class="th" x="111" y="465" text-anchor="middle">AzureFoundry</text><text class="ts" x="111" y="480" text-anchor="middle">cloud</text>
+<rect class="teal" x="180" y="446" width="110" height="42" rx="4"/><text class="th" x="235" y="465" text-anchor="middle">GithubModels</text><text class="ts" x="235" y="480" text-anchor="middle">cloud</text>
+<rect class="teal" x="304" y="446" width="110" height="42" rx="4"/><text class="th" x="359" y="465" text-anchor="middle">FoundryLocal</text><text class="ts" x="359" y="480" text-anchor="middle">local</text>
+<rect class="teal" x="428" y="446" width="96" height="42" rx="4"/><text class="th" x="476" y="465" text-anchor="middle">LmStudio</text><text class="ts" x="476" y="480" text-anchor="middle">LAN</text>
+<rect class="teal" x="538" y="446" width="86" height="42" rx="4"/><text class="th" x="581" y="465" text-anchor="middle">LocalGemma</text><text class="ts" x="581" y="480" text-anchor="middle">LM-Kit</text>
+<rect class="teal" x="56" y="496" width="150" height="36" rx="4"/><text class="th" x="131" y="519" text-anchor="middle">OpenCodeGo x14</text>
+<rect class="teal" x="220" y="496" width="120" height="36" rx="4"/><text class="th" x="280" y="519" text-anchor="middle">DerpYardly</text>
+<rect class="coral" x="354" y="496" width="130" height="36" rx="4"/><text class="th" x="419" y="519" text-anchor="middle">Ollama classifier</text>
+<rect class="coral" x="498" y="496" width="126" height="36" rx="4"/><text class="th" x="561" y="519" text-anchor="middle">Hermes fleet</text>
+</svg>

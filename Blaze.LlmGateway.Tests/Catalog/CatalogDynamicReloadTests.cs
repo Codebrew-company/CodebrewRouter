@@ -90,7 +90,7 @@ public sealed class CatalogDynamicReloadTests
 
         catalog.Reload(newOpts);
 
-        Assert.Equal(1, catalog.GetAllDeployments().Count);
+        Assert.Single(catalog.GetAllDeployments());
         Assert.NotNull(catalog.GetDeployment("dep-a"));
         Assert.Null(catalog.GetDeployment("dep-b"));
     }

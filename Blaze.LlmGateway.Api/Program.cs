@@ -204,7 +204,9 @@ if (builder.Environment.IsDevelopment())
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("devui", policy => policy
-            .SetIsOriginAllowed(_ => true)
+            .SetIsOriginAllowed(origin =>
+                Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                && (uri.IsLoopback || uri.Host.StartsWith("192.168.", StringComparison.Ordinal)))
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials());
@@ -335,6 +337,33 @@ app.Use(async (context, next) =>
         logger?.LogError(ex, "❌ Request pipeline exception");
         throw;
     }
+});
+
+// Admin endpoint guard: /admin/* requires X-Admin-Key matching LlmGateway:AdminApiKey.
+// Fail closed outside Development when no key is configured.
+var adminApiKey = app.Configuration["LlmGateway:AdminApiKey"];
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/admin"))
+    {
+        var isDev = app.Environment.IsDevelopment();
+        if (string.IsNullOrEmpty(adminApiKey))
+        {
+            if (!isDev)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new { error = "Admin endpoints disabled: LlmGateway:AdminApiKey is not configured." });
+                return;
+            }
+        }
+        else if (!string.Equals(context.Request.Headers["X-Admin-Key"].ToString(), adminApiKey, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid X-Admin-Key header." });
+            return;
+        }
+    }
+    await next(context);
 });
 
 startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json and /swagger/v1/swagger.json");

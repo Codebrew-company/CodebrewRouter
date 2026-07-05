@@ -18,12 +18,13 @@ namespace Blaze.LlmGateway.Infrastructure.RoutingStrategies;
 public class OllamaMetaRoutingStrategy(
     IChatClient routerClient,
     IRoutingStrategy fallbackStrategy,
-    ILogger<OllamaMetaRoutingStrategy> logger) : IRoutingStrategy
+    ILogger<OllamaMetaRoutingStrategy> logger,
+    TimeSpan? circuitBreakerCooldown = null) : IRoutingStrategy
 {
     private static readonly string[] ValidDestinations = Enum.GetNames<RouteDestination>();
 
     // Circuit breaker: once Ollama fails, skip subsequent calls for the cooldown window.
-    private static readonly TimeSpan CooldownDuration = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan CooldownDuration = circuitBreakerCooldown ?? TimeSpan.FromMinutes(5);
     private DateTimeOffset? _circuitOpenedAt;
 
     private static readonly string SystemPrompt = $"""

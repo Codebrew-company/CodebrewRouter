@@ -42,7 +42,7 @@ public static class AppHostComposition
             "derp-yardly");
         var derpYardlyApiKey = builder.Configuration.GetValue(
             "LlmGateway:Providers:DerpYardly:ApiKey",
-            "973622463c157c21602790ecc522f95a62e7e9ea1904f877d2f2e2f3c23ea2f0");
+            "");
         var localInferenceModelPath = builder.Configuration.GetValue<string>(
             "LlmGateway:LocalInference:ModelPath") ?? "";
         var localInferenceCacheDirectory = builder.Configuration.GetValue<string>(

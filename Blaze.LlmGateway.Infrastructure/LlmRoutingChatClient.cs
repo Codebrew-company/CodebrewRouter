@@ -121,6 +121,16 @@ public class LlmRoutingChatClient : DelegatingChatClient
             if (streamFailed || !hasMore)
             {
                 await enumerator.DisposeAsync();
+                if (streamFailed)
+                {
+                    // Surface the failure to the client instead of masquerading as a clean finish.
+                    yield return new ChatResponseUpdate(ChatRole.Assistant, "\n[gateway] provider stream failed mid-response; output above may be truncated")
+                    {
+                        FinishReason = ChatFinishReason.Length
+                    };
+                    _logger.LogWarning("⚠️ Streaming ended after mid-stream failure - {ChunkCount} updates delivered", chunkCount);
+                    yield break;
+                }
                 _logger.LogInformation("✅ Streaming complete - {ChunkCount} updates", chunkCount);
                 yield break;
             }

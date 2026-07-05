@@ -14,6 +14,7 @@ public class LlmGatewayOptions
     public RoutingOptions Routing { get; set; } = new();
     public LocalInferenceOptions LocalInference { get; set; } = new();
     public CodebrewRouterOptions CodebrewRouter { get; set; } = new();
+    public FusionOptions Fusion { get; set; } = new();
     public Dictionary<string, VirtualModelOptions> VirtualModels { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public ModelAvailabilityOptions Availability { get; set; } = new();
     public PromptCleanupOptions PromptCleanup { get; set; } = new();
@@ -92,6 +93,8 @@ public class RoutingOptions
     public string RouterModel { get; set; } = "router";
     /// <summary>Fallback destination when meta-routing fails.</summary>
     public string FallbackDestination { get; set; } = nameof(RouteDestination.OllamaRouter);
+    /// <summary>Circuit-breaker cooldown (minutes) after the meta-router model fails or times out.</summary>
+    public int CircuitBreakerCooldownMinutes { get; set; } = 5;
     /// <summary>Failover chains: maps primary destination to list of fallback providers to try if primary fails.</summary>
     public Dictionary<string, List<string>> FailoverChains { get; set; } = new()
     {

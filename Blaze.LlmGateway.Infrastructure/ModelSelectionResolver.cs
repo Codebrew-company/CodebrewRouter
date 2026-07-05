@@ -29,6 +29,15 @@ public sealed class ModelSelectionResolver(
 {
     public async Task<IChatClient?> ResolveAsync(string modelId, CancellationToken cancellationToken = default)
     {
+        // The "fusion" virtual model resolves to its own keyed client (MoA-Lite fan-out + aggregate).
+        // When fusion is disabled the client simply delegates to CodebrewRouter, so this is safe in
+        // both offline and online modes.
+        if (TryResolveFusion(modelId) is { } fusionClient)
+        {
+            logger.LogDebug("Resolving virtual model {ModelId} to FusionChatClient", modelId);
+            return fusionClient;
+        }
+
         if (gatewayOptions.Value.OfflineOnly)
         {
             if (IsVirtualModel(modelId))
@@ -167,4 +176,9 @@ public sealed class ModelSelectionResolver(
 
     private bool IsVirtualModel(string modelId)
         => gatewayOptions.Value.FindVirtualModel(modelId) is not null;
+
+    private IChatClient? TryResolveFusion(string modelId)
+        => modelId.Equals("fusion", StringComparison.OrdinalIgnoreCase)
+            ? serviceProvider.GetKeyedService<IChatClient>("fusion")
+            : null;
 }

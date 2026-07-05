@@ -912,6 +912,7 @@ public static class ChatCompletionsEndpoint
                 if (!string.Equals(tool.Type, "function", StringComparison.OrdinalIgnoreCase) ||
                     string.IsNullOrWhiteSpace(tool.Function.Name))
                 {
+                    logger?.LogWarning("  ├─ Skipping tool: unsupported type '{ToolType}' or missing function name", tool.Type);
                     continue;
                 }
 
