@@ -68,6 +68,9 @@ public static class AnthropicMessagesEndpoint
             client = chatClient;
         }
 
+        // P1.1: keyed clients bypass the DI-decorated router — wrap for the ledger.
+        client = UsageTracking.UsageTrackingRegistration.WrapForRequest(client, httpContext.RequestServices);
+
         try
         {
             return request.Stream

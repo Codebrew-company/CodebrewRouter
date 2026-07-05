@@ -106,7 +106,7 @@ public static class ChatCompletionsEndpoint
         else
         {
             // Non-streaming response
-            return await HandleNonStreamingAsync(messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, gatewayOptions, logger, ct);
+            return await HandleNonStreamingAsync(httpContext.RequestServices, messages, options, req.Model, req.Tools, chatClient, modelSelectionResolver, availabilityRegistry, gatewayOptions, logger, ct);
         }
     }
 
@@ -142,6 +142,7 @@ public static class ChatCompletionsEndpoint
             }
 
             var selectedClient = await ResolveClientAsync(model, chatClient, modelSelectionResolver, availabilityRegistry, logger, ct);
+            selectedClient = UsageTracking.UsageTrackingRegistration.WrapForRequest(selectedClient, httpContext.RequestServices);
             LogRouter(logger, new RouterTryEvent(1, 1, model, model, DirectTaskType));
             var probeSw = System.Diagnostics.Stopwatch.StartNew();
             var firstChunk = await TryGetFirstStreamingUpdateAsync(selectedClient, messages, options, ct);
@@ -244,6 +245,7 @@ public static class ChatCompletionsEndpoint
     }
 
     private static async Task<IResult> HandleNonStreamingAsync(
+        IServiceProvider requestServices,
         List<ChatMessage> messages,
         ChatOptions options,
         string model,
@@ -271,6 +273,7 @@ public static class ChatCompletionsEndpoint
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var selectedClient = await ResolveClientAsync(model, chatClient, modelSelectionResolver, availabilityRegistry, logger, ct);
+            selectedClient = UsageTracking.UsageTrackingRegistration.WrapForRequest(selectedClient, requestServices);
             LogRouter(logger, new RouterTryEvent(1, 1, model, model, DirectTaskType));
             
             var completion = await selectedClient.GetResponseAsync(messages, options, ct);

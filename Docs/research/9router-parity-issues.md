@@ -43,6 +43,16 @@
 - **P2.2** dashboard write paths (combo builder, settings page) and §4.1 "beats 9router" surfaces (fusion inspector, task-classification view, local-inference panel).
 - Configured quota windows (requests/tokens per reset cycle) — P3.1 shipped the reactive lock; proactive configured-quota tracking rides on the P1.1 ledger next.
 
+## Live smoke test with OpenCode Go (2026-07-05 evening)
+
+**Result: end-to-end PASS** — `POST /v1/chat/completions` and Anthropic-native `POST /v1/messages` both answered through OpenCode Go (`qwen3.6-plus`) with real token usage; ledger rows persisted to SQLite; `/admin/spend` aggregates. Findings:
+
+1. ❗ **`OfflineOnly: true` silently disables OpenCode Go.** `ModelAvailabilityHeartbeatService.SeedConfiguredModels` early-returns before seeding cloud providers ([ModelAvailabilityHeartbeatService.cs:163](../../Blaze.LlmGateway.Api/ModelAvailabilityHeartbeatService.cs)), so the router filters them out of every chain regardless of API key. To use OpenCode Go daily: set `LlmGateway:OfflineOnly: false` (appsettings currently ships `true`).
+2. ❗ **LM-Kit segfault on gemma-4-12b tier.** Host has 63.7GB RAM → tier selector picks the 12B model → HF download of the gated repo returns an 821-byte pointer/HTML file → `EnableChecksumValidation: false` lets it through → LM-Kit native crash (0xC0000005) kills the process. Fix options: HF token for the gated repo, pin `ModelTiers` to the cached E4B model, or turn checksum validation on + add a minimum-size sanity check in `RuntimeDownloadModelProvider`.
+3. ❗ **`mimo-v2-omni` is rejected upstream** ("Not supported model", provider Xiaomi) even though `/models` lists it. Every default FallbackRules chain leads with `OpenCodeGo_MiMoV2Omni`, so each `auto` request burns a failed attempt first. Verified working: `qwen3.6-plus`. Recommend re-ordering the chains (e.g. lead with `OpenCodeGo_Qwen3_6Plus`) or re-testing mimo periodically. Upstream also has new models not in `OpenCodeGoModels` (minimax-m3, kimi-k2.7-code, glm-5.2, qwen3.7-max/plus, hy3-preview).
+4. **Fixed during test:** usage ledger only captured the unkeyed router client; resolver-selected keyed clients bypassed it → empty ledger. Endpoints now wrap the resolved client per request (`UsageTrackingRegistration.WrapForRequest`, fail-open).
+5. OpenCode Go key was passed via environment variable for the test — not persisted anywhere in the repo. For daily use put it in user secrets or machine env (`LlmGateway__Providers__OpenCodeGo__ApiKey`).
+
 ## P0.3 hardening checklist (9router CVE lessons)
 
 - [x] Default-deny auth on `/v1` (path prefix, not route allowlist) — CVE-2026-46339 inverse.
