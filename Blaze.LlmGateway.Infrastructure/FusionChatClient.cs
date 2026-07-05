@@ -276,7 +276,7 @@ public sealed class FusionChatClient(
         }
 
         var taskType = await taskClassifier.ClassifyAsync(messages, ct);
-        taskType = TaskClassificationHelper.ReclassifyForVision(taskType, messages);
+        taskType = TaskClassificationHelper.ReclassifyForMedia(taskType, messages);
         var typeKey = taskType.ToString();
 
         var proposerChain =

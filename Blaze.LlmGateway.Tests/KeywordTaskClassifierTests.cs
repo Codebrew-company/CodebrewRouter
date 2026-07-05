@@ -162,4 +162,22 @@ public class KeywordTaskClassifierTests
         var result = await CreateClassifier().ClassifyAsync(UserMessages("image code snippet"));
         Assert.Equal(TaskType.VisionObjectDetection, result);
     }
+
+    [Theory]
+    [InlineData("transcribe this recording for me")]
+    [InlineData("summarize this voice note")]
+    [InlineData("convert this text to speech")]
+    public async Task Speech_MatchesAudioKeywords(string prompt)
+    {
+        var result = await CreateClassifier().ClassifyAsync(UserMessages(prompt));
+        Assert.Equal(TaskType.Speech, result);
+    }
+
+    [Fact]
+    public async Task Speech_MatchesBeforeVision()
+    {
+        // "transcribe" is in the Speech rule which appears before Vision; also contains "image"
+        var result = await CreateClassifier().ClassifyAsync(UserMessages("transcribe the audio from this image slideshow"));
+        Assert.Equal(TaskType.Speech, result);
+    }
 }

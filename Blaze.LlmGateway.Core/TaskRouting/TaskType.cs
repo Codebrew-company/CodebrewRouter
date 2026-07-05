@@ -22,6 +22,13 @@ public enum TaskType
     /// </summary>
     VisionObjectDetection,
 
+    /// <summary>
+    /// Speech and audio tasks: transcription, spoken-audio QA, voice-note summarization.
+    /// Detected automatically when messages contain DataContent or UriContent
+    /// with audio/ media types.
+    /// </summary>
+    Speech,
+
     /// <summary>Creative writing: stories, poems, essays, fiction, blog posts.</summary>
     Creative,
 

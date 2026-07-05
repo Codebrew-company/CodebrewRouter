@@ -10,25 +10,52 @@ namespace Blaze.LlmGateway.Infrastructure.TaskClassification;
 public static class TaskClassificationHelper
 {
     /// <summary>
-    /// Upgrades a <see cref="TaskType.General"/> classification to
-    /// <see cref="TaskType.VisionObjectDetection"/> when the conversation carries image or
-    /// video content. Non-General classifications are returned unchanged.
+    /// Upgrades a <see cref="TaskType.General"/> classification based on attached media:
+    /// image/video content → <see cref="TaskType.VisionObjectDetection"/>,
+    /// audio content → <see cref="TaskType.Speech"/>. Non-General classifications are
+    /// returned unchanged. Visual media wins when both are present (vision models
+    /// handle mixed-media turns better than audio-only ones).
     /// </summary>
-    public static TaskType ReclassifyForVision(TaskType taskType, IEnumerable<ChatMessage> messages)
+    public static TaskType ReclassifyForMedia(TaskType taskType, IEnumerable<ChatMessage> messages)
     {
         if (taskType != TaskType.General)
         {
             return taskType;
         }
 
-        var hasVisualMedia = messages.Any(m => m.Contents?.Any(c =>
-            (c is DataContent dc && dc.MediaType is not null &&
-             (dc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
-              dc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))) ||
-            (c is UriContent uc && uc.MediaType is not null &&
-             (uc.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
-              uc.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)))) == true);
+        var hasVisualMedia = false;
+        var hasAudioMedia = false;
 
-        return hasVisualMedia ? TaskType.VisionObjectDetection : taskType;
+        foreach (var message in messages)
+        {
+            foreach (var content in message.Contents ?? [])
+            {
+                var mediaType = content switch
+                {
+                    DataContent dc => dc.MediaType,
+                    UriContent uc => uc.MediaType,
+                    _ => null
+                };
+
+                if (mediaType is null)
+                {
+                    continue;
+                }
+
+                if (mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasVisualMedia = true;
+                }
+                else if (mediaType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasAudioMedia = true;
+                }
+            }
+        }
+
+        return hasVisualMedia ? TaskType.VisionObjectDetection
+            : hasAudioMedia ? TaskType.Speech
+            : taskType;
     }
 }

@@ -48,7 +48,7 @@ public sealed class OllamaTaskClassifier : ITaskClassifier
 
         try
         {
-            var systemPrompt = @"Classify this task into ONE of: Coding, Reasoning, VisionObjectDetection, Research, Creative, DataAnalysis, General.
+            var systemPrompt = @"Classify this task into ONE of: Coding, Reasoning, VisionObjectDetection, Speech, Research, Creative, DataAnalysis, General.
 Respond with ONLY the task type, nothing else.";
 
             var classifyMessages = new List<ChatMessage>
@@ -87,6 +87,7 @@ Respond with ONLY the task type, nothing else.";
             "coding" => TaskType.Coding,
             "reasoning" => TaskType.Reasoning,
             "visionobjectdetection" => TaskType.VisionObjectDetection,
+            "speech" => TaskType.Speech,
             "research" => TaskType.Research,
             "creative" => TaskType.Creative,
             "dataanalysis" => TaskType.DataAnalysis,
@@ -103,6 +104,8 @@ Respond with ONLY the task type, nothing else.";
             return TaskType.Coding;
         if (lower.Contains("image") || lower.Contains("vision") || lower.Contains("screenshot"))
             return TaskType.VisionObjectDetection;
+        if (lower.Contains("audio") || lower.Contains("speech") || lower.Contains("transcribe") || lower.Contains("voice"))
+            return TaskType.Speech;
         if (lower.Contains("research") || lower.Contains("paper") || lower.Contains("study"))
             return TaskType.Research;
         if (lower.Contains("creative") || lower.Contains("story") || lower.Contains("write"))

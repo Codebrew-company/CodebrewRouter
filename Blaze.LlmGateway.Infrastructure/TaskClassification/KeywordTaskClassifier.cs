@@ -15,6 +15,10 @@ public sealed class KeywordTaskClassifier(ILogger<KeywordTaskClassifier> logger)
     // Ordered: more specific patterns before broader ones.
     private static readonly (string[] Keywords, TaskType Type)[] Rules =
     [
+        // Speech / audio (check before vision — "transcribe this recording" must not fall through)
+        (["transcribe", "transcription", "audio", "speech", "voice note", "voice memo",
+          "recording", "spoken", "listen to", "text to speech", "speech to text"], TaskType.Speech),
+
         // Vision / object detection (check before "research" which contains "analyze")
         (["image", "photo", "picture", "detect", "object in", "identify object",
           "vision", "screenshot", "what is in this", "describe this image", "look at this"], TaskType.VisionObjectDetection),

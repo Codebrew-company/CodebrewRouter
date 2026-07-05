@@ -37,6 +37,7 @@ public class OllamaTaskClassifierTests
     [InlineData("Coding",                TaskType.Coding)]
     [InlineData("Research",              TaskType.Research)]
     [InlineData("VisionObjectDetection", TaskType.VisionObjectDetection)]
+    [InlineData("Speech",                TaskType.Speech)]
     [InlineData("Creative",              TaskType.Creative)]
     [InlineData("DataAnalysis",          TaskType.DataAnalysis)]
     [InlineData("General",               TaskType.General)]

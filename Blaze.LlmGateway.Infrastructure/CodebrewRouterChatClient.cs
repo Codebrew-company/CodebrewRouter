@@ -419,8 +419,8 @@ public sealed class CodebrewRouterChatClient(
         var tokenCount = tokenCounter.CountTokens(messages);
         var taskType = await taskClassifier.ClassifyAsync(messages, cancellationToken);
 
-        // Vision-aware content inspection: General + image/video content → VisionObjectDetection.
-        taskType = TaskClassificationHelper.ReclassifyForVision(taskType, messages);
+        // Media-aware content inspection: General + image/video → VisionObjectDetection, audio → Speech.
+        taskType = TaskClassificationHelper.ReclassifyForMedia(taskType, messages);
 
         var typeKey = taskType.ToString();
         var providers =
