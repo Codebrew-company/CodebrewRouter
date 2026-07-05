@@ -280,16 +280,47 @@ public sealed class LocalGemmaWarmupServiceTests
         state.Snapshot.Status.Should().Be(LocalGemmaWarmupStatus.Failed);
     }
 
+    [Fact]
+    public async Task StartAsync_WhenTierSelectionRegistered_LogsSelectedTier()
+    {
+        var fakeClient = new FakeWarmupChatClient();
+        var state = new LocalGemmaWarmupState();
+        var logger = new CapturingLogger<LocalGemmaWarmupService>();
+        var service = CreateService(
+            new LocalInferenceOptions
+            {
+                Enabled = true,
+                WarmupEnabled = true,
+                ModelPath = fakeClient.ModelPath!,
+                BlockStartupUntilWarm = true
+            },
+            state,
+            logger,
+            fakeClient,
+            new LocalModelTierSelection("gemma-4-12b", fakeClient.ModelPath!, 32.0));
+
+        await service.StartAsync(CancellationToken.None);
+
+        logger.Messages.Should().Contain(message => message.StartsWith(LocalWarmupLog.TierSelectedTag, StringComparison.Ordinal)
+            && message.Contains("gemma-4-12b"));
+    }
+
     private static LocalGemmaWarmupService CreateService(
         LocalInferenceOptions options,
         LocalGemmaWarmupState state,
         ILogger<LocalGemmaWarmupService> logger,
-        IChatClient? client = null)
+        IChatClient? client = null,
+        LocalModelTierSelection? tierSelection = null)
     {
         var services = new ServiceCollection();
         if (client is not null)
         {
             services.AddKeyedSingleton("LocalGemma", client);
+        }
+
+        if (tierSelection is not null)
+        {
+            services.AddSingleton(tierSelection);
         }
 
         var provider = services.BuildServiceProvider();

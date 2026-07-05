@@ -36,6 +36,14 @@ public static class ServiceCollectionExtensions
         var localOptions = new LocalInferenceOptions();
         section.Bind(localOptions);
 
+        // Must run before providerOptions captures ModelPath below.
+        var tierSelection = LocalModelTierSelector.Apply(
+            localOptions, GC.GetGCMemoryInfo().TotalAvailableMemoryBytes);
+        if (tierSelection is not null)
+        {
+            services.AddSingleton(tierSelection);
+        }
+
         var providerOptions = new CodebrewRouterProviderOptions
         {
             LocalEndpoint = configuration["LlmGateway:Providers:OllamaRouter:PrimaryEndpoint"]
@@ -139,6 +147,13 @@ public static class ServiceCollectionExtensions
         var options = new LocalInferenceOptions();
         localInferenceSection.Bind(options);
 
+        var tierSelection = LocalModelTierSelector.Apply(
+            options, GC.GetGCMemoryInfo().TotalAvailableMemoryBytes);
+        if (tierSelection is not null)
+        {
+            services.AddSingleton(tierSelection);
+        }
+
         // Register configuration as both concrete and IOptions
         services.AddSingleton(options);
         services.AddSingleton(Options.Create(options));
@@ -237,6 +252,11 @@ public sealed class LocalGemmaWarmupService(
         }
 
         LocalWarmupLog.Start(logger, opts.ModelPath, opts.BlockStartupUntilWarm);
+
+        if (serviceProvider.GetService<LocalModelTierSelection>() is { } tier)
+        {
+            LocalWarmupLog.TierSelected(logger, tier.TierName, tier.ModelPath, tier.TotalMemoryGb);
+        }
 
         if (string.IsNullOrWhiteSpace(opts.ModelPath))
         {

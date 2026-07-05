@@ -107,6 +107,60 @@ public class LocalInferenceIntegrationTests
     }
 
     [Fact]
+    public void AddCodebrewRouterLocalProvider_WithModelTiers_RewritesModelPathToATierPath()
+    {
+        var services = CreateServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LlmGateway:LocalInference:Enabled"] = "true",
+                ["LlmGateway:LocalInference:ModelPath"] = "https://example/original.lmk",
+                ["LlmGateway:LocalInference:ModelTiers:0:Name"] = "tier-floor",
+                ["LlmGateway:LocalInference:ModelTiers:0:MinTotalMemoryGb"] = "0",
+                ["LlmGateway:LocalInference:ModelTiers:0:ModelPath"] = "https://example/tier-floor.lmk",
+                ["LlmGateway:LocalInference:ModelTiers:1:Name"] = "tier-big",
+                ["LlmGateway:LocalInference:ModelTiers:1:MinTotalMemoryGb"] = "12",
+                ["LlmGateway:LocalInference:ModelTiers:1:ModelPath"] = "https://example/tier-big.lmk"
+            })
+            .Build();
+
+        services.AddCodebrewRouterLocalProvider(configuration);
+        var sp = services.BuildServiceProvider();
+
+        // Real host RAM decides the exact tier (exact selection is pinned in
+        // LocalModelTierSelectorTests) — here we assert the rewrite propagated everywhere.
+        var tierPaths = new[] { "https://example/tier-floor.lmk", "https://example/tier-big.lmk" };
+        var options = sp.GetRequiredService<LocalInferenceOptions>();
+        Assert.Contains(options.ModelPath, tierPaths);
+
+        var providerOptions = sp.GetRequiredService<CodebrewRouterProviderOptions>();
+        Assert.Equal(options.ModelPath, providerOptions.LocalModelPath);
+
+        var selection = sp.GetRequiredService<LocalModelTierSelection>();
+        Assert.Equal(options.ModelPath, selection.ModelPath);
+        Assert.True(selection.TotalMemoryGb > 0);
+    }
+
+    [Fact]
+    public void AddCodebrewRouterLocalProvider_WithoutModelTiers_ModelPathUnchangedAndNoSelectionRegistered()
+    {
+        var services = CreateServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LlmGateway:LocalInference:Enabled"] = "true",
+                ["LlmGateway:LocalInference:ModelPath"] = "https://example/original.lmk"
+            })
+            .Build();
+
+        services.AddCodebrewRouterLocalProvider(configuration);
+        var sp = services.BuildServiceProvider();
+
+        Assert.Equal("https://example/original.lmk", sp.GetRequiredService<LocalInferenceOptions>().ModelPath);
+        Assert.Null(sp.GetService<LocalModelTierSelection>());
+    }
+
+    [Fact]
     public void AddLocalInferenceServices_UsesDefaultOptionsWhenConfigurationMissing()
     {
         // Arrange

@@ -20,6 +20,14 @@ public class LocalInferenceOptions
     public string ModelPath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional model tiers selected automatically by total host memory at startup.
+    /// When empty, <see cref="ModelPath"/> is used as-is (legacy behavior).
+    /// When non-empty, the highest tier whose <see cref="LocalModelTierOptions.MinTotalMemoryGb"/>
+    /// the host satisfies overwrites <see cref="ModelPath"/>; the top-level value is then ignored.
+    /// </summary>
+    public List<LocalModelTierOptions> ModelTiers { get; set; } = [];
+
+    /// <summary>
     /// Directory where downloaded models are cached. Only used if <c>ModelPath</c> is a remote URL.
     /// Default: "{CurrentDirectory}/.llm-cache"
     /// </summary>

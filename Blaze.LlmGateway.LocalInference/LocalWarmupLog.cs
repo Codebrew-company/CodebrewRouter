@@ -9,6 +9,7 @@ namespace Blaze.LlmGateway.LocalInference;
 public static class LocalWarmupLog
 {
     public const string StartTag = "[LOCAL-WARMUP-START]";
+    public const string TierSelectedTag = "[LOCAL-WARMUP-TIER]";
     public const string LoadTag = "[LOCAL-WARMUP-LOAD]";
     public const string PrimeTag = "[LOCAL-WARMUP-PRIME]";
     public const string ReadyTag = "[LOCAL-WARMUP-READY]";
@@ -21,6 +22,14 @@ public static class LocalWarmupLog
             StartTag,
             modelPath,
             blockStartupUntilWarm);
+
+    public static void TierSelected(ILogger logger, string tierName, string modelPath, double totalMemoryGb)
+        => logger.LogInformation(
+            "{Tag} Local model tier selected by host memory. Tier={Tier}, ModelPath={ModelPath}, TotalMemoryGb={TotalMemoryGb:F1}",
+            TierSelectedTag,
+            tierName,
+            modelPath,
+            totalMemoryGb);
 
     public static void Load(ILogger logger, string? modelPath, bool loaded, long elapsedMilliseconds)
         => logger.LogInformation(
