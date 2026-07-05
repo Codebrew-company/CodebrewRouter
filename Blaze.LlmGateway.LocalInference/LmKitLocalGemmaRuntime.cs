@@ -284,6 +284,11 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
     private sealed class ChannelTextFilter
     {
         private const string ChannelMarker = "<|channel>";
+
+        // Marker variants the model emits that carry no parseable channel name (observed live
+        // from gemma-4-4b: "...<channel|>```python..."). Stripped from the stream verbatim.
+        private static readonly string[] StripTokens = ["<channel|>"];
+
         internal static readonly string[] ControlTokens =
         [
             "<turn|>",
@@ -331,6 +336,7 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             }
 
             _buffer.Append(chunk);
+            RemoveStripTokens();
 
             while (true)
             {
@@ -392,7 +398,9 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
 
             var trailingMarkerLength = LongestMarkerPrefixAtEnd();
             var trailingControlTokenLength = LongestControlTokenPrefixAtEnd();
-            var flushLength = _buffer.Length - Math.Max(trailingMarkerLength, trailingControlTokenLength);
+            var trailingStripTokenLength = LongestStripTokenPrefixAtEnd();
+            var flushLength = _buffer.Length
+                - Math.Max(trailingMarkerLength, Math.Max(trailingControlTokenLength, trailingStripTokenLength));
             if (flushLength <= 0)
             {
                 yield break;
@@ -427,6 +435,7 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
 
         public IEnumerable<string> Complete()
         {
+            RemoveStripTokens();
             foreach (var text in FlushWithoutMarker())
             {
                 yield return text;
@@ -434,6 +443,18 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
 
             if (_sawStopControlToken || _suppressPlainThinkingPrelude)
             {
+                // Residual fallback, mirroring the explicit-channel path below: an
+                // all-suppressed response must never reach the client as empty text.
+                if (!_emittedVisibleText)
+                {
+                    RememberSuppressed(_buffer.ToString());
+                    _buffer.Clear();
+                    if (_suppressed.Length > 0)
+                    {
+                        yield return _suppressed.ToString();
+                    }
+                }
+
                 yield break;
             }
 
@@ -645,6 +666,29 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             _buffer.Clear();
             _sawStopControlToken = true;
             return true;
+        }
+
+        private void RemoveStripTokens()
+        {
+            foreach (var stripToken in StripTokens)
+            {
+                _buffer.Replace(stripToken, string.Empty);
+            }
+        }
+
+        private int LongestStripTokenPrefixAtEnd()
+        {
+            var max = Math.Min(_buffer.Length, StripTokens.Max(token => token.Length) - 1);
+            for (var length = max; length > 0; length--)
+            {
+                var suffix = _buffer.ToString(_buffer.Length - length, length);
+                if (StripTokens.Any(token => token.StartsWith(suffix, StringComparison.Ordinal)))
+                {
+                    return length;
+                }
+            }
+
+            return 0;
         }
 
         private int LongestControlTokenPrefixAtEnd()

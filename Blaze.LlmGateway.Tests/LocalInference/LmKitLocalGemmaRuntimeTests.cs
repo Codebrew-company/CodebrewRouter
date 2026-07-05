@@ -67,8 +67,10 @@ public sealed class LmKitLocalGemmaRuntimeTests
     }
 
     [Fact]
-    public async Task GetStreamingResponseAsync_SuppressesPlainEnglishThinkingPrelude_WhenNoFinalResponseAppears()
+    public async Task GetStreamingResponseAsync_FallsBackToPreludeText_WhenNoFinalResponseAppears()
     {
+        // Mirrors the explicit-channel residual fallback: an all-suppressed response must
+        // never reach the client as empty text (observed live: empty chat completion).
         var messages = new[] { new ChatMessage(ChatRole.User, "help me with procrastination") };
         var runtime = new FakeLmKitRuntime([
             "Here's a thinking process to construct the response:",
@@ -82,7 +84,47 @@ public sealed class LmKitLocalGemmaRuntimeTests
             chunks.Add(update.Text ?? string.Empty);
         }
 
-        string.Concat(chunks).Should().BeEmpty();
+        string.Concat(chunks).Should().Be(
+            "Here's a thinking process to construct the response:" +
+            "1. Analyze the Request: The user has a two-part request." +
+            "2. Determine the Tone and Style.");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_StripsReversedChannelMarkerVariant()
+    {
+        // Observed live from gemma-4-4b: "...answer the request.<channel|>```python..."
+        var messages = new[] { new ChatMessage(ChatRole.User, "list files in a folder") };
+        var runtime = new FakeLmKitRuntime([
+            "Plan: use os.listdir.<channel|>",
+            "```python\nimport os\n```"
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Be("Plan: use os.listdir.```python\nimport os\n```");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_StripsReversedChannelMarkerVariant_WhenSplitAcrossChunks()
+    {
+        var messages = new[] { new ChatMessage(ChatRole.User, "list files in a folder") };
+        var runtime = new FakeLmKitRuntime([
+            "Plan: use os.listdir.<chan",
+            "nel|>```python\nimport os\n```"
+        ]);
+
+        var chunks = new List<string>();
+        await foreach (var update in runtime.GetStreamingResponseAsync(messages))
+        {
+            chunks.Add(update.Text ?? string.Empty);
+        }
+
+        string.Concat(chunks).Should().Be("Plan: use os.listdir.```python\nimport os\n```");
     }
 
     [Fact]
