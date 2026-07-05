@@ -68,12 +68,12 @@ public static class InfrastructureServiceExtensions
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
                     new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
-                return client.GetChatClient(opts.Model).AsIChatClient()
+                return WrapWithRateLimit(sp, "LmStudio", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
                     .UseContextSizing(tokenCounter, compactor, sizingOptions,
                         opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                    .Build();
+                    .Build());
             }
             catch (Exception ex)
             {
@@ -101,12 +101,12 @@ public static class InfrastructureServiceExtensions
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
                     new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
-                return client.GetChatClient(opts.Model).AsIChatClient()
+                return WrapWithRateLimit(sp, "DerpYardly", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
                     .UseContextSizing(tokenCounter, compactor, sizingOptions,
                         opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                    .Build();
+                    .Build());
             }
             catch (Exception ex)
             {
@@ -146,12 +146,12 @@ public static class InfrastructureServiceExtensions
                 sizingOptionsOcg ??= sp.GetRequiredService<IOptions<ContextSizingOptions>>();
                 sizingLoggerOcg  ??= sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
 
-                return client.GetChatClient(modelName).AsIChatClient()
+                return WrapWithRateLimit(sp, key, client.GetChatClient(modelName).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
                     .UseContextSizing(tokenCounterOcg, compactorOcg, sizingOptionsOcg,
                         opts.MaxContextTokens, opts.ReservedOutputTokens, modelName, sizingLoggerOcg)
-                    .Build();
+                    .Build());
             });
         }
 
@@ -207,12 +207,12 @@ public static class InfrastructureServiceExtensions
                         new ApiKeyCredential(apiKey),
                         new OpenAIClientOptions { Endpoint = new Uri(endpoint) });
 
-                    return client.GetChatClient(modelName).AsIChatClient()
+                    return WrapWithRateLimit(sp, key, client.GetChatClient(modelName).AsIChatClient()
                         .AsBuilder()
                         .UseFunctionInvocation()
                         .UseContextSizing(tokenCounter, compactor, sizingOptions,
                             maxCtx, currentHermesOpts.ReservedOutputTokens, modelName, sizingLogger)
-                        .Build();
+                        .Build());
                 });
             }
         }
@@ -339,6 +339,9 @@ public static class InfrastructureServiceExtensions
             return (IChatClient)failoverClient;
         });
 
+        // P3.1: model-lock registry — pre-emptive skip of rate-limited providers.
+        services.AddSingleton<Quota.IModelLockRegistry, Quota.ModelLockRegistry>();
+
         // Register catalog routing strategy resolver
         services.AddSingleton<IRoutingStrategyResolver, RoutingStrategyResolver>();
 
@@ -443,6 +446,18 @@ public static class InfrastructureServiceExtensions
             // var mcpManager = sp.GetRequiredService<McpConnectionManager>();
             // var mcpLogger = sp.GetRequiredService<ILogger<McpToolDelegatingClient>>();
             // return new McpToolDelegatingClient(router, mcpManager, mcpLogger);
+
+            // P4.2: RTK-style tool-output compression (fail-open, no-op when disabled).
+            router = new PromptCleaning.ToolOutputCompressingChatClient(
+                router,
+                sp.GetRequiredService<IOptionsMonitor<LlmGatewayOptions>>(),
+                sp.GetRequiredService<ILogger<PromptCleaning.ToolOutputCompressingChatClient>>());
+
+            // P4.1: Caveman/Ponytail output savers (no-op when disabled).
+            router = new OutputSavers.OutputSaverChatClient(
+                router,
+                sp.GetRequiredService<IOptionsMonitor<LlmGatewayOptions>>(),
+                sp.GetRequiredService<ILogger<OutputSavers.OutputSaverChatClient>>());
 
             return router;
         });
@@ -600,6 +615,26 @@ public static class InfrastructureServiceExtensions
                 sp.GetRequiredService<ILogger<FusionChatClient>>()));
 
         return services;
+    }
+
+    /// <summary>
+    /// P0.2: wraps a provider client with a token-bucket rate limiter when
+    /// LlmGateway:RateLimits:{key} is configured. No config = passthrough.
+    /// </summary>
+    private static IChatClient WrapWithRateLimit(IServiceProvider sp, string key, IChatClient client)
+    {
+        var limits = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.RateLimits;
+        if (!limits.TryGetValue(key, out var limit)
+            || (limit.RequestsPerMinute <= 0 && limit.TokensPerMinute <= 0))
+        {
+            return client;
+        }
+
+        return new RateLimiting.RateLimitingChatClient(
+            client,
+            new RateLimiting.RateLimitBucket(limit.RequestsPerMinute, limit.TokensPerMinute),
+            key,
+            sp.GetRequiredService<ILogger<RateLimiting.RateLimitingChatClient>>());
     }
 
     private static IChatClient? GetConfiguredKeyedClient(IServiceProvider sp, string key, bool isConfigured)

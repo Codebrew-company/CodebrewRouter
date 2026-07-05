@@ -33,6 +33,10 @@ public sealed class CodebrewRouterChatClient(
     private CodebrewRouterOptions Options => options.Value;
     private LlmGatewayOptions GatewayOptions => gatewayOptions.Value;
 
+    private Quota.IModelLockRegistry? _lockRegistry;
+    private Quota.IModelLockRegistry? LockRegistry =>
+        _lockRegistry ??= serviceProvider.GetService<Quota.IModelLockRegistry>();
+
     private void Log(object @event, LogLevel? level = null)
         => RouterLog.Write(logger, @event, level);
 
@@ -101,6 +105,15 @@ public sealed class CodebrewRouterChatClient(
         {
             var key = providers[i];
             var model = ModelName(key);
+
+            // P3.1: pre-emptive skip while the provider is rate-limit cooling down.
+            if (LockRegistry?.IsLocked(key, out var lockRemaining) == true)
+            {
+                Log(new RouterSkipEvent(i + 1, key, model, 0, 0, "model_lock_cooldown"));
+                providerFailures.Add($"{key}: cooling down after rate limit ({lockRemaining.TotalSeconds:F0}s remaining).");
+                continue;
+            }
+
             var client = serviceProvider.GetKeyedService<IChatClient>(key);
             if (client is null)
             {
@@ -137,12 +150,14 @@ public sealed class CodebrewRouterChatClient(
                 if (GatewayOptions.VerboseRouteLogging && activeOptions.ModelId.Equals("fusion", StringComparison.OrdinalIgnoreCase))
                     RouterLog.Write(logger, new RouterFusionResultEvent(model, $"selected provider {key} at attempt {i + 1}"));
 
+                LockRegistry?.ReportSuccess(key);
                 return response;
             }
             catch (Exception ex)
             {
                 attemptSw.Stop();
                 Log(new RouterFailEvent(i + 1, key, model, ex.Message), LogLevel.Warning);
+                LockRegistry?.ReportFailure(key, ex.GetBaseException().Message);
                 providerFailures.Add($"{key}: {ex.GetBaseException().Message}");
             }
         }
@@ -196,6 +211,14 @@ public sealed class CodebrewRouterChatClient(
             var key = providers[i];
             var model = ModelName(key);
 
+            // P3.1: pre-emptive skip while the provider is rate-limit cooling down.
+            if (LockRegistry?.IsLocked(key, out var lockRemaining) == true)
+            {
+                Log(new RouterSkipEvent(i + 1, key, model, 0, 0, "model_lock_cooldown"));
+                providerFailures.Add($"{key}: cooling down after rate limit ({lockRemaining.TotalSeconds:F0}s remaining).");
+                continue;
+            }
+
             var client = serviceProvider.GetKeyedService<IChatClient>(key);
             if (client is null)
             {
@@ -228,10 +251,12 @@ public sealed class CodebrewRouterChatClient(
                     emptyCompletionFailures++;
                 }
 
+                LockRegistry?.ReportFailure(key, reason);
                 providerFailures.Add($"{key}: {reason}");
                 continue;
             }
 
+            LockRegistry?.ReportSuccess(key);
             Log(new RouterSuccessEvent(
                 i + 1, key, model, taskType.ToString(), null, null, null, chunkSw.ElapsedMilliseconds));
 

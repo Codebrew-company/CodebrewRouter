@@ -21,6 +21,16 @@ public class LlmGatewayOptions
     public TaskClassificationOptions TaskClassification { get; set; } = new();
     public ContextSizingOptions ContextSizing { get; set; } = new();
     public ProviderCatalogOptions ProviderCatalog { get; set; } = new();
+    public AuthOptions Auth { get; set; } = new();
+
+    /// <summary>
+    /// Per-provider rate limits keyed by the keyed-DI provider name (e.g. "LmStudio",
+    /// "OpenCodeGo_DeepSeekV4Pro"). Applied as a token-bucket wrapper around the provider client.
+    /// </summary>
+    public Dictionary<string, ProviderRateLimitOptions> RateLimits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public OutputSaverOptions OutputSavers { get; set; } = new();
+    public ToolOutputCompressionOptions ToolOutputCompression { get; set; } = new();
 
     /// <summary>
     /// When true, all route-decision log events ([ROUTER-SELECT], [ROUTER-DEPLOY], [ROUTER-HEALTH],
@@ -117,4 +127,66 @@ public class DerpYardlyOptions
     public string ApiKey { get; set; } = "";
     public int MaxContextTokens { get; set; } = 32768;
     public int ReservedOutputTokens { get; set; } = 2048;
+}
+
+/// <summary>
+/// API-key authentication for the public /v1 surface (default-deny; 9router CVE-2026-46339 lesson).
+/// </summary>
+public class AuthOptions
+{
+    /// <summary>
+    /// Whether /v1 requires a valid gateway API key.
+    /// null (default) = auto: enforced as soon as at least one API key has been minted.
+    /// true = always enforced (requests fail closed when no keys exist).
+    /// false = explicit dev bypass; /v1 is open.
+    /// </summary>
+    public bool? RequireApiKey { get; set; }
+
+    /// <summary>Requests per minute allowed per API key on /v1. 0 = unlimited.</summary>
+    public int RequestsPerMinutePerKey { get; set; }
+
+    /// <summary>
+    /// Requests per minute per client socket IP when key auth is not enforced.
+    /// Identity comes from the TCP source address, never X-Forwarded-For (CVE-2026-55501 lesson).
+    /// 0 = unlimited.
+    /// </summary>
+    public int RequestsPerMinutePerIp { get; set; }
+}
+
+public class ProviderRateLimitOptions
+{
+    public int RequestsPerMinute { get; set; }
+    public int TokensPerMinute { get; set; }
+}
+
+/// <summary>
+/// Output token savers (9router Caveman/Ponytail parity): system prompts appended per request
+/// that make responses terse (Caveman) and code lazy/YAGNI (Ponytail).
+/// </summary>
+public class OutputSaverOptions
+{
+    public OutputSaverToggle Caveman { get; set; } = new();
+    public OutputSaverToggle Ponytail { get; set; } = new();
+}
+
+public class OutputSaverToggle
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>Lite, Full, or Ultra.</summary>
+    public string Level { get; set; } = "Full";
+}
+
+/// <summary>
+/// RTK-style compression of tool-role message content (input token saver, fail-open).
+/// </summary>
+public class ToolOutputCompressionOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Tool outputs shorter than this are never touched.</summary>
+    public int MinLengthChars { get; set; } = 2000;
+
+    /// <summary>Hard cap applied by the smart-truncate filter.</summary>
+    public int MaxLengthChars { get; set; } = 24000;
 }

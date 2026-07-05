@@ -48,6 +48,18 @@ public interface IProtocolStore
     Task<IReadOnlyList<RouteDecision>> ListRouteDecisionsAsync(int limit = 100, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AssetDescriptor>> ListAssetsAsync(CancellationToken cancellationToken = default);
+
+    Task AddUsageAsync(UsageRecord record, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UsageRecord>> ListUsageAsync(
+        int limit = 100,
+        int offset = 0,
+        string? apiKeyId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<SpendSummary> GetUsageSummaryAsync(string? apiKeyId = null, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UsageDailyBucket>> GetUsageDailyAsync(int days = 30, CancellationToken cancellationToken = default);
 }
 
 public sealed class InMemoryProtocolStore : IProtocolStore
@@ -214,6 +226,62 @@ public sealed class InMemoryProtocolStore : IProtocolStore
 
     public Task<IReadOnlyList<AssetDescriptor>> ListAssetsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(_assets);
+
+    public Task AddUsageAsync(UsageRecord record, CancellationToken cancellationToken = default)
+    {
+        _usage.Enqueue(record);
+        while (_usage.Count > 10_000 && _usage.TryDequeue(out _))
+        {
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<UsageRecord>> ListUsageAsync(
+        int limit = 100,
+        int offset = 0,
+        string? apiKeyId = null,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<UsageRecord>>(
+        [
+            .. _usage.Reverse()
+                .Where(r => apiKeyId is null || string.Equals(r.ApiKeyId, apiKeyId, StringComparison.Ordinal))
+                .Skip(offset)
+                .Take(limit)
+        ]);
+
+    public Task<SpendSummary> GetUsageSummaryAsync(string? apiKeyId = null, CancellationToken cancellationToken = default)
+    {
+        var rows = _usage.Where(r => apiKeyId is null || string.Equals(r.ApiKeyId, apiKeyId, StringComparison.Ordinal)).ToArray();
+        return Task.FromResult(new SpendSummary(
+            "spend.summary",
+            apiKeyId,
+            rows.Length,
+            rows.Sum(r => (long)r.TotalTokens),
+            rows.Sum(r => r.CostUsd),
+            rows.Sum(r => (long)r.PromptTokens),
+            rows.Sum(r => (long)r.CompletionTokens)));
+    }
+
+    public Task<IReadOnlyList<UsageDailyBucket>> GetUsageDailyAsync(int days = 30, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow.Date.AddDays(-(days - 1));
+        var buckets = _usage
+            .Where(r => r.CreatedAt.UtcDateTime >= cutoff)
+            .GroupBy(r => r.CreatedAt.UtcDateTime.Date)
+            .OrderBy(g => g.Key)
+            .Select(g => new UsageDailyBucket(
+                g.Key.ToString("yyyy-MM-dd"),
+                g.Count(),
+                g.Sum(r => (long)r.PromptTokens),
+                g.Sum(r => (long)r.CompletionTokens),
+                g.Sum(r => (long)r.TotalTokens),
+                g.Sum(r => r.CostUsd)))
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<UsageDailyBucket>>(buckets);
+    }
+
+    private readonly ConcurrentQueue<UsageRecord> _usage = new();
 
     private sealed record ConversationState(ConversationObject Conversation)
     {
@@ -407,8 +475,34 @@ public sealed record SpendSummary(
     [property: JsonPropertyName("object")] string Object,
     [property: JsonPropertyName("key_id")] string? KeyId,
     [property: JsonPropertyName("total_requests")] int TotalRequests,
+    [property: JsonPropertyName("total_tokens")] long TotalTokens,
+    [property: JsonPropertyName("estimated_cost_usd")] decimal EstimatedCostUsd,
+    [property: JsonPropertyName("prompt_tokens")] long PromptTokens = 0,
+    [property: JsonPropertyName("completion_tokens")] long CompletionTokens = 0);
+
+/// <summary>One /v1 request in the usage ledger (P1.1).</summary>
+public sealed record UsageRecord(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("api_key_id")] string? ApiKeyId,
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("provider_model")] string? ProviderModel,
+    [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
+    [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
     [property: JsonPropertyName("total_tokens")] int TotalTokens,
-    [property: JsonPropertyName("estimated_cost_usd")] decimal EstimatedCostUsd);
+    [property: JsonPropertyName("cost_usd")] decimal CostUsd,
+    [property: JsonPropertyName("latency_ms")] long LatencyMs,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("streamed")] bool Streamed);
+
+/// <summary>Per-day usage aggregate for dashboard charts.</summary>
+public sealed record UsageDailyBucket(
+    [property: JsonPropertyName("date")] string Date,
+    [property: JsonPropertyName("requests")] int Requests,
+    [property: JsonPropertyName("prompt_tokens")] long PromptTokens,
+    [property: JsonPropertyName("completion_tokens")] long CompletionTokens,
+    [property: JsonPropertyName("total_tokens")] long TotalTokens,
+    [property: JsonPropertyName("cost_usd")] decimal CostUsd);
 
 public sealed record RouteDecision(
     [property: JsonPropertyName("id")] string Id,

@@ -408,3 +408,6 @@ graphify-out/
 
 # Local runtime job DB
 proxmox-jobs.sqlite3
+
+# runtime protocol store (SQLite + legacy JSON)
+Blaze.LlmGateway.Api/App_Data/

@@ -116,6 +116,32 @@ public static class LiteLlmEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithMetadata(new EndpointNameMetadata("get-virtual-model"));
 
+        // Anthropic-native Messages API (P4.3) — Claude Code connects via ANTHROPIC_BASE_URL.
+        app.MapPost("/v1/messages", async (
+            AnthropicMessagesRequest req,
+            IChatClient chatClient,
+            IModelSelectionResolver modelSelectionResolver,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+            await AnthropicMessagesEndpoint.HandleAsync(req, chatClient, modelSelectionResolver, httpContext, ct))
+        .WithName("AnthropicMessages")
+        .WithTags("Anthropic-compatible")
+        .WithSummary("Create a message (Anthropic Messages API)")
+        .WithDescription("Anthropic-native endpoint translating the Messages wire format (incl. SSE streaming events, tool use, system blocks) to the gateway's MEAI routing pipeline.")
+        .Accepts<AnthropicMessagesRequest>("application/json")
+        .Produces<AnthropicMessagesResponse>(StatusCodes.Status200OK, "application/json")
+        .WithMetadata(new EndpointNameMetadata("anthropic-messages"));
+
+        app.MapPost("/v1/messages/count_tokens", (
+            AnthropicCountTokensRequest req,
+            Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter tokenCounter) =>
+            AnthropicMessagesEndpoint.CountTokens(req, tokenCounter))
+        .WithName("AnthropicCountTokens")
+        .WithTags("Anthropic-compatible")
+        .WithSummary("Count input tokens for an Anthropic Messages request")
+        .Produces<AnthropicCountTokensResponse>(StatusCodes.Status200OK, "application/json")
+        .WithMetadata(new EndpointNameMetadata("anthropic-count-tokens"));
+
         app.MapPost("/v1/responses", async (
             CreateResponseRequest req,
             IChatClient chatClient,
@@ -396,8 +422,9 @@ public static class LiteLlmEndpoints
         app.MapPost("/admin/keys", (
             AdminCreateApiKeyRequest req,
             IProtocolStore protocolStore,
+            Auth.ApiKeyCache keyCache,
             CancellationToken ct) =>
-            AdminEndpoint.CreateKeyAsync(req, protocolStore, ct))
+            AdminEndpoint.CreateKeyAsync(req, protocolStore, keyCache, ct))
         .WithName("CreateAdminKey")
         .WithTags("Admin")
         .WithMetadata(new EndpointNameMetadata("create-admin-key"));
@@ -413,17 +440,66 @@ public static class LiteLlmEndpoints
         app.MapDelete("/admin/keys/{keyId}", (
             string keyId,
             IProtocolStore protocolStore,
+            Auth.ApiKeyCache keyCache,
             CancellationToken ct) =>
-            AdminEndpoint.DeleteKeyAsync(keyId, protocolStore, ct))
+            AdminEndpoint.DeleteKeyAsync(keyId, protocolStore, keyCache, ct))
         .WithName("DeleteAdminKey")
         .WithTags("Admin")
         .WithMetadata(new EndpointNameMetadata("delete-admin-key"));
 
-        app.MapGet("/admin/spend", (string? keyId) =>
-            AdminEndpoint.Spend(keyId))
+        app.MapGet("/admin/spend", (
+            string? keyId,
+            IProtocolStore protocolStore,
+            CancellationToken ct) =>
+            AdminEndpoint.SpendAsync(keyId, protocolStore, ct))
         .WithName("GetAdminSpend")
         .WithTags("Admin")
         .WithMetadata(new EndpointNameMetadata("get-admin-spend"));
+
+        app.MapGet("/admin/usage/summary", (
+            string? keyId,
+            IProtocolStore protocolStore,
+            CancellationToken ct) =>
+            AdminEndpoint.SpendAsync(keyId, protocolStore, ct))
+        .WithName("GetUsageSummary")
+        .WithTags("Admin")
+        .WithMetadata(new EndpointNameMetadata("get-usage-summary"));
+
+        app.MapGet("/admin/usage/history", (
+            int? limit,
+            int? offset,
+            string? keyId,
+            IProtocolStore protocolStore,
+            CancellationToken ct) =>
+            AdminEndpoint.UsageHistoryAsync(limit, offset, keyId, protocolStore, ct))
+        .WithName("GetUsageHistory")
+        .WithTags("Admin")
+        .WithMetadata(new EndpointNameMetadata("get-usage-history"));
+
+        app.MapGet("/admin/usage/chart", (
+            int? days,
+            IProtocolStore protocolStore,
+            CancellationToken ct) =>
+            AdminEndpoint.UsageChartAsync(days, protocolStore, ct))
+        .WithName("GetUsageChart")
+        .WithTags("Admin")
+        .WithMetadata(new EndpointNameMetadata("get-usage-chart"));
+
+        // Same payload as /v1/models/diagnostics but under the admin guard so the
+        // dashboard needs only the admin key (the /v1 surface may require a gateway key).
+        app.MapGet("/admin/providers", (ModelAvailabilityRegistry registry) =>
+            ModelsEndpoint.HandleDiagnosticsAsync(registry))
+        .WithName("GetAdminProviders")
+        .WithTags("Admin")
+        .WithMetadata(new EndpointNameMetadata("get-admin-providers"));
+
+        app.MapGet("/admin/quota/locks", (
+            Blaze.LlmGateway.Infrastructure.Quota.IModelLockRegistry lockRegistry) =>
+            new { @object = "list", data = lockRegistry.Snapshot() })
+        .WithName("GetQuotaLocks")
+        .WithTags("Admin")
+        .WithSummary("Active provider rate-limit cooldowns with expiry timestamps")
+        .WithMetadata(new EndpointNameMetadata("get-quota-locks"));
 
         app.MapGet("/admin/routes/recent", (
             IProtocolStore protocolStore,

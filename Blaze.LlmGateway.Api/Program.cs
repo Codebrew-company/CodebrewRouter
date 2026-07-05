@@ -1,7 +1,10 @@
 using System.Text.Json;
 using Blaze.LlmGateway.Api;
+using Blaze.LlmGateway.Api.Auth;
+using Blaze.LlmGateway.Api.Dashboard;
 using Blaze.LlmGateway.Api.Models;
 using Blaze.LlmGateway.Api.Services;
+using Blaze.LlmGateway.Api.UsageTracking;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
@@ -66,14 +69,30 @@ builder.Services.AddSingleton<ModelAvailabilityRegistry>();
 builder.Services.AddSingleton<IModelAvailabilityRegistry>(sp => sp.GetRequiredService<ModelAvailabilityRegistry>());
 builder.Services.AddHostedService<ModelAvailabilityHeartbeatService>();
 builder.Services.AddSingleton<IModelCatalog, ModelCatalogService>();
-builder.Services.AddSingleton<IProtocolStore>(_ =>
+builder.Services.AddSingleton<IProtocolStore>(sp =>
 {
+    var provider = builder.Configuration["LlmGateway:ProtocolStore:Provider"];
     var configuredPath = builder.Configuration["LlmGateway:ProtocolStore:Path"];
-    var path = string.IsNullOrWhiteSpace(configuredPath)
-        ? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "protocol-store.json")
+
+    if (string.Equals(provider, "json", StringComparison.OrdinalIgnoreCase))
+    {
+        var jsonPath = string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "protocol-store.json")
+            : configuredPath;
+        return new JsonProtocolStore(jsonPath);
+    }
+
+    // Default: SQLite (ADR-0004). Migrates the legacy JSON store on first start.
+    var dbPath = string.IsNullOrWhiteSpace(configuredPath) || configuredPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+        ? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "protocol-store.sqlite3")
         : configuredPath;
-    return new JsonProtocolStore(path);
+    var legacyJsonPath = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "protocol-store.json");
+    return new SqliteProtocolStore(
+        dbPath,
+        legacyJsonPath,
+        sp.GetRequiredService<ILogger<SqliteProtocolStore>>());
 });
+builder.Services.AddSingleton<Blaze.LlmGateway.Api.Auth.ApiKeyCache>();
 
 // ── Catalog Observability: register OTel Meter source and Prometheus exporter ──
 builder.Services.AddOpenTelemetry()
@@ -162,6 +181,10 @@ builder.Services.AddHealthChecks()
 // Keyed provider clients + routing pipeline (MCP disabled for now)
 builder.Services.AddLlmProviders();
 builder.Services.AddLlmInfrastructure();
+
+// P1.1: usage ledger decorator over the unkeyed router client.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddUsageTracking();
 
 // Microsoft Agent Framework / DevUI services. CodebrewRouter keeps its custom
 // OpenAI-compatible endpoints, while DevUI uses the framework service plane.
@@ -356,7 +379,7 @@ app.Use(async (context, next) =>
                 return;
             }
         }
-        else if (!string.Equals(context.Request.Headers["X-Admin-Key"].ToString(), adminApiKey, StringComparison.Ordinal))
+        else if (!FixedTimeEquals(context.Request.Headers["X-Admin-Key"].ToString(), adminApiKey))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid X-Admin-Key header." });
@@ -366,12 +389,20 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
+// P0.1: default-deny API-key auth over the entire /v1 prefix (see ApiKeyAuthentication).
+app.UseV1ApiKeyAuth();
+startupLogger.LogInformation("  ├─ /v1 API-key auth active (LlmGateway:Auth)");
+
 startupLogger.LogInformation("  ├─ OpenAPI JSON available at /openapi/v1.json and /swagger/v1/swagger.json");
 startupLogger.LogInformation("  ├─ Swagger UI available at /swagger");
 startupLogger.LogInformation("  ├─ Scalar available at /scalar/v1");
 
-// Register LiteLLM-compatible endpoints  
+// Register LiteLLM-compatible endpoints
 app.RegisterLiteLlmEndpoints();
+
+// P2: operator dashboard (static shell; data behind X-Admin-Key admin guard).
+app.MapDashboard();
+startupLogger.LogInformation("  ├─ Dashboard available at /dashboard");
 
 // ── Brew API endpoints (consolidated from Brew.Api) ──
 
@@ -457,6 +488,13 @@ startupLogger.LogInformation("  ├─ Observability metrics available at /metri
 startupLogger.LogInformation("✅ Blaze.LlmGateway.Api startup complete");
 
 app.Run();
+
+static bool FixedTimeEquals(string presented, string expected)
+{
+    var presentedBytes = System.Text.Encoding.UTF8.GetBytes(presented);
+    var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expected);
+    return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes);
+}
 
 // For testing via WebApplicationFactory
 public partial class Program { }

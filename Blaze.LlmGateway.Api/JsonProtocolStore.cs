@@ -271,6 +271,79 @@ public sealed class JsonProtocolStore : IProtocolStore
             new("asset_superpowers", "superpowers", "skill-pack", "Planning, TDD, debugging, and verification workflows", true)
         ]);
 
+    public Task AddUsageAsync(UsageRecord record, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _snapshot.Usage.Add(record);
+            if (_snapshot.Usage.Count > 5000)
+            {
+                _snapshot.Usage = [.. _snapshot.Usage.TakeLast(5000)];
+            }
+
+            Save();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<UsageRecord>> ListUsageAsync(
+        int limit = 100,
+        int offset = 0,
+        string? apiKeyId = null,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult<IReadOnlyList<UsageRecord>>(
+            [
+                .. _snapshot.Usage.AsEnumerable().Reverse()
+                    .Where(r => apiKeyId is null || string.Equals(r.ApiKeyId, apiKeyId, StringComparison.Ordinal))
+                    .Skip(offset)
+                    .Take(limit)
+            ]);
+        }
+    }
+
+    public Task<SpendSummary> GetUsageSummaryAsync(string? apiKeyId = null, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var rows = _snapshot.Usage
+                .Where(r => apiKeyId is null || string.Equals(r.ApiKeyId, apiKeyId, StringComparison.Ordinal))
+                .ToArray();
+            return Task.FromResult(new SpendSummary(
+                "spend.summary",
+                apiKeyId,
+                rows.Length,
+                rows.Sum(r => (long)r.TotalTokens),
+                rows.Sum(r => r.CostUsd),
+                rows.Sum(r => (long)r.PromptTokens),
+                rows.Sum(r => (long)r.CompletionTokens)));
+        }
+    }
+
+    public Task<IReadOnlyList<UsageDailyBucket>> GetUsageDailyAsync(int days = 30, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var cutoff = DateTimeOffset.UtcNow.Date.AddDays(-(days - 1));
+            var buckets = _snapshot.Usage
+                .Where(r => r.CreatedAt.UtcDateTime >= cutoff)
+                .GroupBy(r => r.CreatedAt.UtcDateTime.Date)
+                .OrderBy(g => g.Key)
+                .Select(g => new UsageDailyBucket(
+                    g.Key.ToString("yyyy-MM-dd"),
+                    g.Count(),
+                    g.Sum(r => (long)r.PromptTokens),
+                    g.Sum(r => (long)r.CompletionTokens),
+                    g.Sum(r => (long)r.TotalTokens),
+                    g.Sum(r => r.CostUsd)))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<UsageDailyBucket>>(buckets);
+        }
+    }
+
     private static ProtocolStoreSnapshot Load(string path)
     {
         if (!File.Exists(path))
@@ -315,5 +388,7 @@ public sealed class JsonProtocolStore : IProtocolStore
         public Dictionary<string, AdminApiKey> ApiKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public List<RouteDecision> RouteDecisions { get; set; } = [];
+
+        public List<UsageRecord> Usage { get; set; } = [];
     }
 }
