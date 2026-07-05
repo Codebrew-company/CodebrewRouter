@@ -19,7 +19,7 @@ An OpenAI-compatible proxy that routes AI **coding tools** (Claude Code, Codex, 
 | Token savers | RTK (compresses tool outputs, −20-40% input), Caveman Mode (terse-output prompts, −65% output), Ponytail (YAGNI-first codegen prompts), Headroom (external compression) |
 | Dashboard | Provider OAuth connection mgmt, combo builder, real-time usage stats, API-key generation/mgmt, settings toggles, request-log viewer |
 | Persistence | SQLite (better-sqlite3) with automatic backups; cloud sync across devices |
-| Security | API keys minted **and enforced** on `/v1` (post-CVE-2026-5842; auth bypass was patched in 0.3.75) |
+| Security | API keys minted **and enforced** on `/v1` (post-CVE: auth bypass CVE-2026-5842 fixed 0.3.75; critical RCE CVE-2026-46339 fixed 0.4.37) |
 | Deploy | localhost, VPS/PM2, Docker (multi-platform), Cloudflare Workers |
 
 ## 2. Gap matrix
@@ -75,7 +75,7 @@ Legend: ✅ Have (equal or better) · 🟡 Partial (exists but unwired/stubbed/d
 Priorities assume the goal stated by the owner: *9Router's UIX and features are the target*. Router-product platform first; the JARVIS/agent direction (analysis.md Phases 2–8) layers on top rather than being replaced — its A2A/Responses/local-inference work is precisely the differentiation (§ validation report).
 
 **P0 — Security & correctness (prerequisite for everything public-facing)**
-1. Enforce API-key auth on `/v1/*` and `/admin/*`: validate minted `cbr_...` keys from `IProtocolStore` via middleware/endpoint filter. 9Router's CVE-2026-5842 (auth bypass, fixed 0.3.75) is the cautionary tale — ship enforcement before any dashboard.
+1. Enforce API-key auth on `/v1/*` and `/admin/*`: validate minted `cbr_...` keys from `IProtocolStore` via middleware/endpoint filter. 9Router's CVE cluster is the cautionary tale — CVE-2026-46339 (CVSS 10.0 unauthenticated RCE via 40+ unguarded API routes, fixed 0.4.37) and CVE-2026-5842 (admin-API auth bypass, fixed 0.3.75) — ship enforcement before any dashboard.
 2. Wire the existing `RateLimitingChatClient` into the pipeline (per-key and per-provider buckets).
 
 **P1 — Real usage/spend + durable store**
