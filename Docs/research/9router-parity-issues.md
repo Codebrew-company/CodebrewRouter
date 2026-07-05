@@ -17,6 +17,8 @@
 | **P4.1** Caveman/Ponytail savers | ✅ | `Infrastructure/OutputSavers/OutputSaverChatClient.cs` + prompts (Lite/Full/Ultra), wired into the unkeyed pipeline, live-toggled via `LlmGateway:OutputSavers` (`IOptionsMonitor`). Tests in `Tests/OutputSavers/`. |
 | **P4.2** RTK tool-output compression | ✅ | `Infrastructure/PromptCleaning/ToolOutputCompressor.cs` (gitDiff, buildOutput, dedupLog, smartTruncate; auto-detect from first 1KB; fail-open) + `ToolOutputCompressingChatClient` before provider dispatch. 50KB build log compresses >40% (test-verified). Config `LlmGateway:ToolOutputCompression`. |
 | **P4.3** Anthropic-native `/v1/messages` | ✅ | `Api/AnthropicMessagesEndpoint.cs` + `AnthropicModels.cs`: full Messages wire format (system blocks incl. array form, content-part arrays, base64/url images, tool_use/tool_result), Anthropic SSE event protocol (message_start → content_block_* → message_delta → message_stop), tool_choice mapping, `/v1/messages/count_tokens` via `ITokenCounter`. 5 integration tests in `Tests/Anthropic/`. |
+| **P4.4** Config-driven providers | ✅ | Any `ProviderCatalog:Deployments` entry whose `Provider` key has no code-registered client gets a keyed `IChatClient` auto-built from config (endpoint, key(s), model, context window, per-deployment rate limits) — zero code for a new OpenAI-compatible provider. Tests in `Tests/Infrastructure/ConfigDrivenProviderRegistrationTests.cs`. |
+| **P3.2** Multi-credential pools | ✅ | `ProviderDeploymentConfig.ApiKeys` + `CredentialStrategy` (`fill-first` / `round-robin`, rotate after 5 consecutive uses). `Infrastructure/Quota/CredentialPoolChatClient.cs`: one inner client per key, per-credential exponential cooldown on rate-limit signals, first-chunk-probe streaming failover. Tests in `Tests/Quota/CredentialPoolChatClientTests.cs`. |
 
 ## ❗ Manual issues / decisions for the owner
 
@@ -35,11 +37,9 @@
 
 ## ⏭ Not started (next phases per plan §4.6)
 
-- **P3.2** multi-credential pools per provider (fill-first / sticky round-robin).
-- **P4.4** config-driven provider breadth (zero-code provider onboarding) — prerequisite for P5a/P6.
-- **P4.5** CLI-tool onboarding page exists in minimal form on the dashboard Home tab; the full 17-tool page is open.
-- **P5a/P5b** subscription upstreams (API-key path first; OAuth opt-in gate).
-- **P6** free-model catalog sweep + 3-tier default combo.
+- **P4.5** CLI-tool onboarding page exists in minimal form on the dashboard Home tab (Claude Code / Codex / OpenAI-compatible / curl); the full 17-tool page with per-tool status detection is open.
+- **P5a/P5b** subscription upstreams — ❗ blocked on owner input: needs real pay-as-you-go API keys (Anthropic/OpenAI/OpenCode Go). The mechanism (P4.4 config-driven + P3.2 pools) is ready; each provider is now just an appsettings entry. P5b OAuth flows remain a build item.
+- **P6** free-model catalog sweep — ❗ blocked on research + owner keys: free-tier limits churn, and Gemini/Groq/Cerebras/OpenRouter/GitHub Models each need an account/key. Once keys exist, each is one `ProviderCatalog:Deployments` entry with `MaxRequestsPerMinute`/`MaxTokensPerMinute` quota metadata feeding the P3.1 locks.
 - **P2.2** dashboard write paths (combo builder, settings page) and §4.1 "beats 9router" surfaces (fusion inspector, task-classification view, local-inference panel).
 - Configured quota windows (requests/tokens per reset cycle) — P3.1 shipped the reactive lock; proactive configured-quota tracking rides on the P1.1 ledger next.
 

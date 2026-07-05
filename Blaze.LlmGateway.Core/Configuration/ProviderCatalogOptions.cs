@@ -50,6 +50,18 @@ public class ProviderDeploymentConfig
     public string Provider { get; set; } = "";
     public string? Endpoint { get; set; }
     public string? ApiKey { get; set; }
+
+    /// <summary>
+    /// P3.2: optional credential pool. When more than one key is present the provider
+    /// client rotates across them (see <see cref="CredentialStrategy"/>) and a
+    /// rate-limited key is cooled down individually without benching the others.
+    /// <see cref="ApiKey"/> is treated as the first pool entry when both are set.
+    /// </summary>
+    public List<string> ApiKeys { get; set; } = [];
+
+    /// <summary>"fill-first" (priority order, default) or "round-robin" (sticky rotation).</summary>
+    public string CredentialStrategy { get; set; } = "fill-first";
+
     public string? Model { get; set; }
     public int Weight { get; set; } = 1;
     public int Priority { get; set; } = 10;

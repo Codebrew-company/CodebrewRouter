@@ -224,6 +224,101 @@ public static class InfrastructureServiceExtensions
             return new MockChatClient(log);
         });
 
+        // ── P4.4: config-driven providers (9router's registry pattern) ──────────
+        // Any ProviderCatalog deployment whose Provider key has no code-registered
+        // keyed IChatClient gets one auto-registered from config alone: endpoint,
+        // api key, model, context window, and per-deployment rate limits.
+        // New OpenAI-compatible provider = an appsettings entry, zero code.
+        using (var spTemp = services.BuildServiceProvider())
+        {
+            var catalogOptions = spTemp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.ProviderCatalog;
+            string[] reservedKeys = ["LocalGemma", "CodebrewRouter", "fusion", "Mock", "OllamaRouter", "OllamaLocal"];
+
+            var providerGroups = catalogOptions.Deployments
+                .Where(d => d.Enabled && !string.IsNullOrWhiteSpace(d.Endpoint))
+                .GroupBy(d => d.Provider, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in providerGroups)
+            {
+                var providerKey = group.Key;
+                if (string.IsNullOrWhiteSpace(providerKey)
+                    || reservedKeys.Contains(providerKey, StringComparer.OrdinalIgnoreCase)
+                    || services.Any(d => d.ServiceType == typeof(IChatClient)
+                        && d.IsKeyedService
+                        && d.ServiceKey is string existingKey
+                        && string.Equals(existingKey, providerKey, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var deployment = group.First();
+                services.AddKeyedSingleton<IChatClient>(providerKey, (sp, _) =>
+                {
+                    var log = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+                    var logMock = sp.GetRequiredService<ILogger<MockChatClient>>();
+                    try
+                    {
+                        var tokenCounter = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                        var compactor = sp.GetRequiredService<IContextCompactor>();
+                        var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
+                        var modelName = string.IsNullOrWhiteSpace(deployment.Model) ? deployment.ModelName : deployment.Model;
+                        log.LogInformation("Registering config-driven provider '{ProviderKey}': {Endpoint}/{Model}",
+                            providerKey, deployment.Endpoint, modelName);
+
+                        // P3.2: credential pool — ApiKey + ApiKeys merged, one inner client per key.
+                        var credentials = new List<string>();
+                        if (!string.IsNullOrWhiteSpace(deployment.ApiKey))
+                        {
+                            credentials.Add(deployment.ApiKey);
+                        }
+
+                        credentials.AddRange(deployment.ApiKeys.Where(k => !string.IsNullOrWhiteSpace(k)));
+                        credentials = [.. credentials.Distinct(StringComparer.Ordinal)];
+                        if (credentials.Count == 0)
+                        {
+                            credentials.Add("notneeded");
+                        }
+
+                        IChatClient BuildForCredential(string credential)
+                            => new OpenAIClient(
+                                    new ApiKeyCredential(credential),
+                                    new OpenAIClientOptions { Endpoint = new Uri(deployment.Endpoint!) })
+                                .GetChatClient(modelName).AsIChatClient()
+                                .AsBuilder()
+                                .UseFunctionInvocation()
+                                .UseContextSizing(tokenCounter, compactor, sizingOptions,
+                                    deployment.MaxContextTokens, 2048, modelName, log)
+                                .Build();
+
+                        var client = credentials.Count == 1
+                            ? BuildForCredential(credentials[0])
+                            : new Quota.CredentialPoolChatClient(
+                                [.. credentials.Select(BuildForCredential)],
+                                deployment.CredentialStrategy,
+                                providerKey,
+                                sp.GetRequiredService<ILogger<Quota.CredentialPoolChatClient>>());
+
+                        // Per-deployment rate limits from the catalog entry itself.
+                        if (deployment.MaxRequestsPerMinute > 0 || deployment.MaxTokensPerMinute > 0)
+                        {
+                            client = new RateLimiting.RateLimitingChatClient(
+                                client,
+                                new RateLimiting.RateLimitBucket(deployment.MaxRequestsPerMinute, deployment.MaxTokensPerMinute),
+                                providerKey,
+                                sp.GetRequiredService<ILogger<RateLimiting.RateLimitingChatClient>>());
+                        }
+
+                        return WrapWithRateLimit(sp, providerKey, client);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.LogWarning(ex, "⚠️ Failed to initialize config-driven provider '{ProviderKey}'; using MockChatClient", providerKey);
+                        return new MockChatClient(logMock);
+                    }
+                });
+            }
+        }
+
         return services;
     }
 
