@@ -9,7 +9,7 @@ public class LocalModelUnavailableException : InvalidOperationException
     {
     }
 
-    public LocalModelUnavailableException(string? message, Exception? innerException) 
+    public LocalModelUnavailableException(string? message, Exception? innerException)
         : base(message, innerException)
     {
     }

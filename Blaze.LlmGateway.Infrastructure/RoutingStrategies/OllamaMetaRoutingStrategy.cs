@@ -59,23 +59,23 @@ public class OllamaMetaRoutingStrategy(
             };
 
             var routingOptions = new ChatOptions { MaxOutputTokens = 10, Temperature = 0f };
-            
+
             // Add timeout to prevent hanging on unreachable Ollama instances (primary router probe)
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(3)); // 3-second timeout on router probe
-            
+
             // Wrap in explicit timeout task in case CancellationToken doesn't propagate through HTTP stack
             var routerTask = routerClient.GetResponseAsync(routingMessages, routingOptions, timeoutCts.Token);
             var completedTask = await Task.WhenAny(
                 routerTask,
                 Task.Delay(TimeSpan.FromSeconds(4), cancellationToken)  // 4-second hard limit
             ).ConfigureAwait(false);
-            
+
             if (completedTask != routerTask)
             {
                 throw new OperationCanceledException("Router probe exceeded 4-second timeout");
             }
-            
+
             var response = await routerTask;
             var responseText = response.Text?.Trim() ?? "";
 

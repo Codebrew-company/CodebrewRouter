@@ -393,7 +393,7 @@ public class LocalInferenceIntegrationTests
         // Act & Assert - Verify singleton registration
         var prov1 = sp.GetRequiredService<IModelDistributionProvider>();
         var prov2 = sp.GetRequiredService<IModelDistributionProvider>();
-        
+
         // Within same scope, singletons are same instance
         Assert.Same(prov1, prov2);
     }

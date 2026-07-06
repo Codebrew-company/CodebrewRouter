@@ -43,12 +43,12 @@ public class MemoryService
     public MemoryService(HttpClient http, IConfiguration configuration)
     {
         _http = http;
-        _apiKey = configuration["MEM0_API_KEY"] 
+        _apiKey = configuration["MEM0_API_KEY"]
             ?? ReadEnvKey()
             ?? throw new InvalidOperationException("MEM0_API_KEY not configured");
 
         _http.BaseAddress = new Uri(BaseUrl);
-        _http.DefaultRequestHeaders.Authorization = 
+        _http.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Token", _apiKey);
 
         _jsonOptions = new JsonSerializerOptions
@@ -63,7 +63,7 @@ public class MemoryService
     /// Add a memory to mem0 for the codebrew/brew user-agent.
     /// </summary>
     public async Task<MemoryResult> AddMemory(
-        string content, 
+        string content,
         Dictionary<string, string>? metadata = null)
     {
         var request = new AddMemoryRequest
@@ -84,10 +84,10 @@ public class MemoryService
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content.ReadAsStringAsync();
-        
+
         // API returns an array of results
         var results = JsonSerializer.Deserialize<List<MemoryResult>>(body, _jsonOptions);
-        return results?.FirstOrDefault() 
+        return results?.FirstOrDefault()
             ?? throw new InvalidOperationException("Empty response from mem0 add memory");
     }
 
@@ -111,7 +111,7 @@ public class MemoryService
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content.ReadAsStringAsync();
-        
+
         // API returns a flat array of memory items
         var results = JsonSerializer.Deserialize<List<MemoryItem>>(body, _jsonOptions);
         return results ?? new List<MemoryItem>();

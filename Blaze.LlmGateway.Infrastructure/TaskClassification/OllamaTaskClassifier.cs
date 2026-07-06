@@ -36,7 +36,7 @@ public sealed class OllamaTaskClassifier : ITaskClassifier
         CancellationToken cancellationToken = default)
     {
         var messageList = messages as IList<ChatMessage> ?? messages.ToList();
-        
+
         if (messageList.Count == 0)
             return TaskType.General;
 
@@ -58,7 +58,7 @@ Respond with ONLY the task type, nothing else.";
             classifyMessages.AddRange(messageList);
 
             var opts = new ChatOptions { Temperature = 0, MaxOutputTokens = 50 };
-            
+
             // USE CACHED CLIENT (no new creation)
             var response = await _cachedRouterClient.GetResponseAsync(classifyMessages, opts, cancellationToken);
             var classification = response.Text?.Trim() ?? "General";

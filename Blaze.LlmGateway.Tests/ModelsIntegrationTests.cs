@@ -37,7 +37,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                             It.IsAny<ChatOptions>(),
                             It.IsAny<CancellationToken>()))
                         .Returns(GetStreamingResponse());
-                    
+
                     mockChatClient
                         .Setup(c => c.GetResponseAsync(
                             It.IsAny<IEnumerable<ChatMessage>>(),
@@ -59,7 +59,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     }
 
                     services.AddSingleton<IModelCatalog>(new FakeModelCatalog());
-                    
+
                     // Configure LM Studio with a valid endpoint for IsLmStudioConfigured check.
                     // Discovery will fail gracefully (network timeout), but the chat probe
                     // will use our mock client, so the provider ends up healthy in the registry.

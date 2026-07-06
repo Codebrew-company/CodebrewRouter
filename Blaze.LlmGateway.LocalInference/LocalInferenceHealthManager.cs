@@ -41,7 +41,7 @@ public class LocalInferenceHealthManager : ILocalInferenceHealthManager, IDispos
         _remoteDiscovery = remoteDiscovery ?? throw new ArgumentNullException(nameof(remoteDiscovery));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _healthChangedSubject = new Subject<HealthStatusChanged>();
-        
+
         // Start in Degraded state (graceful degradation for mobile with no remote endpoint)
         _currentStatus = HealthStatus.Degraded;
         _currentDiagnostics = CreateDiagnostics(HealthStatus.Degraded);
@@ -57,18 +57,18 @@ public class LocalInferenceHealthManager : ILocalInferenceHealthManager, IDispos
     public async Task InitializeAsync()
     {
         _logger.LogInformation("Initializing health manager state");
-        
+
         try
         {
             // Probe availability services to bootstrap state
             var discoveryResult = _remoteDiscovery.GetCachedDiscovery();
             var discoveryOnline = discoveryResult?.IsOnline ?? false;
-            
+
             // Try to get any cached model availability info
             // For simplicity, assume if we're being called we want to probe general state
             // The actual local model check happens through event subscriptions
             var hasLocalModel = false;
-            
+
             if (discoveryOnline && hasLocalModel)
             {
                 _currentStatus = HealthStatus.Healthy;
@@ -89,7 +89,7 @@ public class LocalInferenceHealthManager : ILocalInferenceHealthManager, IDispos
                 _currentStatus = HealthStatus.Unavailable;
                 _logger.LogError("Health initialized: Unavailable (both local and remote offline)");
             }
-            
+
             _currentDiagnostics = CreateDiagnostics(_currentStatus);
             _lastTransitionUtc = DateTime.UtcNow;
         }

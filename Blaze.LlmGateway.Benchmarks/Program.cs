@@ -138,8 +138,11 @@ public class CatalogLookupBenchmarks
                 Name = $"dep-{i}",
                 ModelName = $"model-{i % 10}",
                 Provider = "Mock",
-                Weight = 1, Priority = 10, MaxContextTokens = 4096,
-                Capabilities = ["chat"], Enabled = true,
+                Weight = 1,
+                Priority = 10,
+                MaxContextTokens = 4096,
+                Capabilities = ["chat"],
+                Enabled = true,
             })
             .ToList();
 

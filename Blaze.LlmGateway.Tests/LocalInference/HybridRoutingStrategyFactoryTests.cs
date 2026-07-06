@@ -136,7 +136,7 @@ public class HybridRoutingStrategyFactoryTests
         var mockLoggerFactory = new Mock<ILoggerFactory>();
         var mockKeywordLogger = new Mock<ILogger<KeywordRoutingStrategy>>();
         var mockOllamaLogger = new Mock<ILogger<OllamaMetaRoutingStrategy>>();
-        
+
         mockLoggerFactory
             .Setup(f => f.CreateLogger(It.Is<string>(s => s.Contains("KeywordRoutingStrategy"))))
             .Returns(mockKeywordLogger.Object);

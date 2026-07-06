@@ -27,11 +27,11 @@ public class HermesProviderRegistrationTests
         // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
-        
+
         // Register required dependencies for ContextSizingChatClient
         var mockTokenCounter = new Mock<Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter>();
         var mockCompactor = new Mock<IContextCompactor>();
-        
+
         services.AddSingleton(mockTokenCounter.Object);
         services.AddSingleton(mockCompactor.Object);
         services.AddSingleton<ILogger<MockChatClient>>(NullLogger<MockChatClient>.Instance);
@@ -46,12 +46,12 @@ public class HermesProviderRegistrationTests
             {
                 { "derp-coder", new HermesProfileOptions { Port = 8644, Enabled = true } },
                 { "derp-trainer", new HermesProfileOptions { Port = 8643, Enabled = false } },
-                { "gemma-mlx", new HermesProfileOptions 
-                    { 
-                        Endpoint = "https://api.openai.com/v1", 
-                        Model = "gpt-4o", 
-                        Enabled = true 
-                    } 
+                { "gemma-mlx", new HermesProfileOptions
+                    {
+                        Endpoint = "https://api.openai.com/v1",
+                        Model = "gpt-4o",
+                        Enabled = true
+                    }
                 }
             }
         };
@@ -91,21 +91,21 @@ public class HermesProviderRegistrationTests
             Profiles = new Dictionary<string, HermesProfileOptions>(StringComparer.OrdinalIgnoreCase)
             {
                 { "default", new HermesProfileOptions { Port = 8642, Enabled = true } },
-                { "derp-coder", new HermesProfileOptions 
-                    { 
-                        Port = 8644, 
+                { "derp-coder", new HermesProfileOptions
+                    {
+                        Port = 8644,
                         Enabled = true,
                         ApiKey = "coder-specific-key"
-                    } 
+                    }
                 },
                 { "disabled-profile", new HermesProfileOptions { Port = 9999, Enabled = false } },
-                { "cloud-mlx", new HermesProfileOptions 
-                    { 
-                        Endpoint = "https://api.openai.com/v1", 
-                        Model = "gpt-4o", 
+                { "cloud-mlx", new HermesProfileOptions
+                    {
+                        Endpoint = "https://api.openai.com/v1",
+                        Model = "gpt-4o",
                         Enabled = true,
                         Capabilities = ["chat", "vision"]
-                    } 
+                    }
                 }
             }
         };

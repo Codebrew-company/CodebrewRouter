@@ -48,7 +48,7 @@ public class ServiceCollectionExtensionsTests
         };
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             services.AddCodebrewRouterProvider(options));
     }
 
@@ -59,7 +59,7 @@ public class ServiceCollectionExtensionsTests
         CodebrewRouterProviderOptions options = null!;
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             _services.AddCodebrewRouterProvider(options));
     }
 

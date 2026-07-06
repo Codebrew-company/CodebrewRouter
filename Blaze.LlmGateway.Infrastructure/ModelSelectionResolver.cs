@@ -159,7 +159,7 @@ public sealed class ModelSelectionResolver(
 
             // Resolve context window: curated table → provider config fallback
             var (curatedWindow, _) = ModelContextLimits.Lookup(modelId);
-            var contextWindow  = curatedWindow ?? configuredOllama.MaxContextTokens;
+            var contextWindow = curatedWindow ?? configuredOllama.MaxContextTokens;
             var reservedOutput = configuredOllama.ReservedOutputTokens;
 
             return ((IChatClient)new OllamaApiClient(new Uri(model.Endpoint), model.Id))

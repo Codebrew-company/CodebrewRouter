@@ -377,7 +377,7 @@ public class RuntimeDownloadModelProviderTests
         {
             if (Directory.Exists(cacheDir))
                 Directory.Delete(cacheDir, recursive: true);
-            
+
             var modelUrl = "https://huggingface.co/models/gemma-2b.gguf";
             var testContent = "mock model data"u8.ToArray();
             var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)

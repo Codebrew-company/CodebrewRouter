@@ -212,7 +212,7 @@ internal class CodebrewRouterProviderBuilder : ICodebrewRouterProviderBuilder
         // Register Phase 1 services will be registered by LocalInference.AddLocalInferenceServices
         // or directly if caller doesn't use LocalInference layer
         // For now, this is a placeholder for the Phase 1 services that would be registered
-        
+
         return _services;
     }
 }

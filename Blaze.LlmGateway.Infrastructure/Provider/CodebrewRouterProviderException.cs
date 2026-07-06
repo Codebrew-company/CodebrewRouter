@@ -6,7 +6,7 @@ namespace Blaze.LlmGateway.Infrastructure.Provider;
 public class CodebrewRouterProviderException : InvalidOperationException
 {
     public CodebrewRouterProviderException(string message) : base(message) { }
-    public CodebrewRouterProviderException(string message, Exception innerException) 
+    public CodebrewRouterProviderException(string message, Exception innerException)
         : base(message, innerException) { }
 }
 

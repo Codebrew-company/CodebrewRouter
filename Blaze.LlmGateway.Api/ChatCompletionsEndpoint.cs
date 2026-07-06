@@ -32,7 +32,7 @@ public static class ChatCompletionsEndpoint
     {
         var logger = httpContext.RequestServices.GetService(typeof(ILogger<ChatCompletionRequest>)) as ILogger<ChatCompletionRequest>;
         var availabilityRegistry = httpContext.RequestServices.GetRequiredService<IModelAvailabilityRegistry>();
-        
+
         LogRouter(logger, new RouterStartEvent(req.Messages?.Count ?? 0));
 
         // Validate required fields
@@ -71,7 +71,7 @@ public static class ChatCompletionsEndpoint
             var chatMsg = ToChatMessage(msg);
             var content = msg.Content ?? string.Empty;
             messages.Add(chatMsg);
-            logger?.LogDebug("  ├─ Message added: {Role} - {ContentPreview}", 
+            logger?.LogDebug("  ├─ Message added: {Role} - {ContentPreview}",
                 chatMsg.Role, content.Substring(0, Math.Min(50, content.Length)));
         }
 
@@ -95,7 +95,7 @@ public static class ChatCompletionsEndpoint
                 ResolveResponseFormat(req.ResponseFormat)),
             Reasoning = ResolveReasoning(req.ReasoningEffort)
         };
-        logger?.LogDebug("  ├─ ChatOptions: Temp={Temperature}, MaxTokens={MaxTokens}, TopP={TopP}", 
+        logger?.LogDebug("  ├─ ChatOptions: Temp={Temperature}, MaxTokens={MaxTokens}, TopP={TopP}",
             req.Temperature, options.MaxOutputTokens, req.TopP);
 
         if (req.Stream)
@@ -212,7 +212,7 @@ public static class ChatCompletionsEndpoint
             var finalJson = JsonSerializer.Serialize(finalChunk);
             await httpContext.Response.WriteAsync($"data: {finalJson}\n\n", ct);
             await httpContext.Response.Body.FlushAsync(ct);
-            
+
             streamSw.Stop();
             LogRouter(logger, new RouterStreamCompleteEvent(chunkCount, model, model, DirectTaskType, streamSw.ElapsedMilliseconds));
         }
@@ -275,9 +275,9 @@ public static class ChatCompletionsEndpoint
             var selectedClient = await ResolveClientAsync(model, chatClient, modelSelectionResolver, availabilityRegistry, logger, ct);
             selectedClient = UsageTracking.UsageTrackingRegistration.WrapForRequest(selectedClient, requestServices);
             LogRouter(logger, new RouterTryEvent(1, 1, model, model, DirectTaskType));
-            
+
             var completion = await selectedClient.GetResponseAsync(messages, options, ct);
-            
+
             sw.Stop();
             LogRouter(logger, new RouterSuccessEvent(
                 1,
@@ -792,11 +792,11 @@ public static class ChatCompletionsEndpoint
                         message = $"The prompt requires {coe.RequiredTokens} tokens but the largest available " +
                                   $"context window could only accommodate {coe.Budget} tokens. " +
                                   $"Please reduce the prompt length.",
-                        type    = "context_length_exceeded",
-                        code    = "context_length_exceeded",
-                        param   = (string?)null,
-                        required_tokens        = coe.RequiredTokens,
-                        largest_window_budget  = coe.Budget,
+                        type = "context_length_exceeded",
+                        code = "context_length_exceeded",
+                        param = (string?)null,
+                        required_tokens = coe.RequiredTokens,
+                        largest_window_budget = coe.Budget,
                         attempted_destinations = coe.AttemptedDestinations,
                     }
                 },
@@ -859,7 +859,7 @@ public static class ChatCompletionsEndpoint
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         var selectedClient = await modelSelectionResolver.ResolveAsync(model, cancellationToken);
-        
+
         if (selectedClient is not null)
         {
             LogRouter(logger, new RouterResolveEvent(
@@ -907,7 +907,7 @@ public static class ChatCompletionsEndpoint
             return null;
 
         var aiTools = new List<AITool>();
-        
+
         foreach (var tool in tools)
         {
             try
