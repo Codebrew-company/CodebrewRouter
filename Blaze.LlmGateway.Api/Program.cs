@@ -23,13 +23,6 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry.Metrics;
 using Scalar.AspNetCore;
 
-// Allow self-signed HTTPS certificates for local development
-// HTTPS endpoints (e.g., codellama.local.codebrewco.net) with self-signed certs will work
-#pragma warning disable CS0618
-System.Net.ServicePointManager.ServerCertificateValidationCallback +=
-    (sender, cert, chain, sslPolicyErrors) => true;
-#pragma warning restore CS0618
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();            // FIRST — register OTel/health before anything else
@@ -325,7 +318,7 @@ const string landingHtml = """
   </section>
 
   <footer>
-    Tip: point an OpenAI-compatible client at <code>/v1</code> with any non-empty API key.
+    Tip: point an OpenAI-compatible client at <code>/v1</code> with a minted CodebrewRouter API key.
   </footer>
 </body>
 </html>
@@ -345,12 +338,12 @@ app.Use(async (context, next) =>
 {
     var logger = context.RequestServices.GetService<ILogger<Program>>();
     logger?.LogInformation($"📥 [{context.Request.Method}] {context.Request.Path} - Content-Type: {context.Request.ContentType}");
-    
+
     if (context.Request.Path.Value?.Contains("/v1/chat") == true)
     {
         logger?.LogInformation("🎯 CHAT ENDPOINT ENTRY LOGGED");
     }
-    
+
     try
     {
         await next(context);

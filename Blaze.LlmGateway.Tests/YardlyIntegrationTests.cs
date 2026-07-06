@@ -9,6 +9,9 @@ namespace Blaze.LlmGateway.Tests;
 /// </summary>
 public class YardlyIntegrationTests
 {
+    private const string LiveRouterSkip =
+        "Requires a running CodebrewRouter at http://localhost:5000; run manually for live Yardly verification.";
+
     private static readonly HttpClient Client = new()
     {
         BaseAddress = new Uri("http://localhost:5000"),
@@ -17,7 +20,7 @@ public class YardlyIntegrationTests
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    [Fact]
+    [Fact(Skip = LiveRouterSkip)]
     public async Task YardlyRoute_HealthCheck()
     {
         // Act
@@ -32,7 +35,7 @@ public class YardlyIntegrationTests
         Assert.True((int)response.StatusCode is >= 200 and < 600);
     }
 
-    [Fact]
+    [Fact(Skip = LiveRouterSkip)]
     public async Task YardlyRoute_ModelsList_IncludesYardly()
     {
         // Act
@@ -51,7 +54,7 @@ public class YardlyIntegrationTests
         Assert.Contains("yardly", modelIds);
     }
 
-    [Fact]
+    [Fact(Skip = LiveRouterSkip)]
     public async Task YardlyRoute_ChatCompletion_BotanicalQuery()
     {
         // Arrange
@@ -97,7 +100,7 @@ public class YardlyIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(summary.GetString()));
     }
 
-    [Fact]
+    [Fact(Skip = LiveRouterSkip)]
     public async Task YardlyRoute_ChatCompletion_ReturnsYardlyJson()
     {
         // Arrange

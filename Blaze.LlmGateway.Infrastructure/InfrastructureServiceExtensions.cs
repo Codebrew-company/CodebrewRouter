@@ -13,11 +13,13 @@ using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OpenAI;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 // Alias: existing routing strategy system (pre-catalog)
 using LegacyRoutingStrategy = Blaze.LlmGateway.Infrastructure.RoutingStrategies.IRoutingStrategy;
 
@@ -25,6 +27,16 @@ namespace Blaze.LlmGateway.Infrastructure;
 
 public static class InfrastructureServiceExtensions
 {
+    private static readonly Lazy<PipelineTransport> InvalidProviderCertificateTransport = new(() =>
+    {
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+
+        return new HttpClientPipelineTransport(new HttpClient(handler, disposeHandler: true));
+    });
+
     public static IServiceCollection AddLlmProviders(this IServiceCollection services)
     {
         // TEMPORARY: Disable OllamaLocal registration due to connectivity issues
@@ -55,19 +67,19 @@ public static class InfrastructureServiceExtensions
             var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.LmStudio;
             var log = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
             var logMock = sp.GetRequiredService<ILogger<MockChatClient>>();
-            
+
             log.LogDebug("Initializing LmStudio keyed client: {Endpoint}/{Model}", opts.Endpoint, opts.Model);
-            
+
             try
             {
-                var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-                var compactor     = sp.GetRequiredService<IContextCompactor>();
+                var tokenCounter = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                var compactor = sp.GetRequiredService<IContextCompactor>();
                 var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-                var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+                var sizingLogger = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
                 var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
-                    new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+                    CreateOpenAIClientOptions(sp, opts.Endpoint));
                 return WrapWithRateLimit(sp, "LmStudio", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
@@ -88,19 +100,19 @@ public static class InfrastructureServiceExtensions
             var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.DerpYardly;
             var log = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
             var logMock = sp.GetRequiredService<ILogger<MockChatClient>>();
-            
+
             log.LogDebug("Initializing DerpYardly keyed client: {Endpoint}/{Model}", opts.Endpoint, opts.Model);
-            
+
             try
             {
-                var tokenCounter  = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-                var compactor     = sp.GetRequiredService<IContextCompactor>();
+                var tokenCounter = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                var compactor = sp.GetRequiredService<IContextCompactor>();
                 var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-                var sizingLogger  = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+                var sizingLogger = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
                 var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
-                    new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+                    CreateOpenAIClientOptions(sp, opts.Endpoint));
                 return WrapWithRateLimit(sp, "DerpYardly", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
@@ -125,11 +137,11 @@ public static class InfrastructureServiceExtensions
             var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
             return new OpenAIClient(
                 new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions { Endpoint = new Uri(opts.BaseUrl) });
+                CreateOpenAIClientOptions(sp, opts.BaseUrl));
         });
 
         var tokenCounterOcg = default(Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter);
-        var compactorOcg   = default(IContextCompactor);
+        var compactorOcg = default(IContextCompactor);
         IOptions<ContextSizingOptions>? sizingOptionsOcg = null;
         ILogger<ContextHandling.ContextSizingChatClient>? sizingLoggerOcg = null;
 
@@ -142,9 +154,9 @@ public static class InfrastructureServiceExtensions
                 var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.OpenCodeGo;
 
                 tokenCounterOcg ??= sp.GetRequiredService<TokenCounting.ITokenCounter>();
-                compactorOcg   ??= sp.GetRequiredService<IContextCompactor>();
+                compactorOcg ??= sp.GetRequiredService<IContextCompactor>();
                 sizingOptionsOcg ??= sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-                sizingLoggerOcg  ??= sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
+                sizingLoggerOcg ??= sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
 
                 return WrapWithRateLimit(sp, key, client.GetChatClient(modelName).AsIChatClient()
                     .AsBuilder()
@@ -176,7 +188,7 @@ public static class InfrastructureServiceExtensions
                 {
                     var currentGatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
                     var currentHermesOpts = currentGatewayOpts.Providers.Hermes;
-                    
+
                     if (!currentHermesOpts.Profiles.TryGetValue(profileName, out var currentProfileOpts) || !currentProfileOpts.Enabled)
                     {
                         logMock ??= sp.GetRequiredService<ILogger<MockChatClient>>();
@@ -205,7 +217,7 @@ public static class InfrastructureServiceExtensions
 
                     var client = new OpenAIClient(
                         new ApiKeyCredential(apiKey),
-                        new OpenAIClientOptions { Endpoint = new Uri(endpoint) });
+                        CreateOpenAIClientOptions(sp, endpoint));
 
                     return WrapWithRateLimit(sp, key, client.GetChatClient(modelName).AsIChatClient()
                         .AsBuilder()
@@ -282,7 +294,7 @@ public static class InfrastructureServiceExtensions
                         IChatClient BuildForCredential(string credential)
                             => new OpenAIClient(
                                     new ApiKeyCredential(credential),
-                                    new OpenAIClientOptions { Endpoint = new Uri(deployment.Endpoint!) })
+                                    CreateOpenAIClientOptions(sp, deployment.Endpoint!))
                                 .GetChatClient(modelName).AsIChatClient()
                                 .AsBuilder()
                                 .UseFunctionInvocation()
@@ -368,21 +380,21 @@ public static class InfrastructureServiceExtensions
             // Create the health state manager
             var logger = sp.GetRequiredService<ILogger<OllamaHealthStateManager>>();
             var healthState = new OllamaHealthStateManager(logger);
-            
+
             // CRITICAL: Pre-initialize endpoints IMMEDIATELY at DI registration time
             // This must happen before any keyed client tries to use the health state
             try
             {
                 var ollamaRouterOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.OllamaRouter;
-                
+
                 logger.LogInformation("🔄 Pre-initializing OllamaHealthStateManager at DI registration time");
                 logger.LogInformation("  Primary endpoint: {Primary}", ollamaRouterOptions.PrimaryEndpoint);
                 logger.LogInformation("  Fallback endpoint: {Fallback}", ollamaRouterOptions.FallbackEndpoint);
-                
+
                 healthState.SetEndpoints(
                     ollamaRouterOptions.PrimaryEndpoint,
                     ollamaRouterOptions.FallbackEndpoint);
-                
+
                 logger.LogInformation("✅ OllamaHealthStateManager initialized at DI time");
             }
             catch (Exception ex)
@@ -390,10 +402,10 @@ public static class InfrastructureServiceExtensions
                 logger.LogError(ex, "❌ Failed to initialize OllamaHealthStateManager during DI registration");
                 throw;
             }
-            
+
             return healthState;
         });
-        
+
         // Register model sync validator (used during startup)
         services.AddSingleton<OllamaModelSyncValidator>();
 
@@ -409,7 +421,7 @@ public static class InfrastructureServiceExtensions
             // Create OllamaApiClient instances with extended timeout for large models
             // .12 may be running gemma4:26b (26 billion parameters) which can take 30+ seconds per inference
             var longTimeout = TimeSpan.FromSeconds(180); // 3 minutes for very large models
-            
+
             var primaryClient = OllamaClientExtensions.CreateWithTimeout(
                 new Uri(ollamaRouterOptions.PrimaryEndpoint),
                 ollamaRouterOptions.Model,
@@ -481,12 +493,12 @@ public static class InfrastructureServiceExtensions
                         TimeSpan.FromMinutes(gatewayOpts.Routing.CircuitBreakerCooldownMinutes));
                 }
             }
-            
+
             // ⚠️ TEMPORARY: Skip OllamaRouter due to Ollama .12 hanging on inference requests
             // Until Ollama is fixed/restarted, use keyword-only routing to avoid 10+ second hangs
             logger.LogWarning("⚠️ OllamaRouter disabled due to upstream Ollama connectivity issues; using keyword-only routing");
             return keywordFallback;
-            
+
             // Future: Re-enable when Ollama .12 is stable
             // try
             // {
@@ -523,7 +535,7 @@ public static class InfrastructureServiceExtensions
             var fallback =
                 GetConfiguredKeyedClient(sp, "LmStudio", HasValue(providerOptions.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
-             
+
             var strategy = sp.GetRequiredService<LegacyRoutingStrategy>();
             var failoverStrategy = sp.GetRequiredService<IFailoverStrategy>();
             var routerLogger = sp.GetRequiredService<ILogger<LlmRoutingChatClient>>();
@@ -600,7 +612,7 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IPromptCleaner>(sp =>
         {
             var cleanupOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.PromptCleanup;
-            
+
             if (!cleanupOptions.Enabled)
             {
                 return new NoopPromptCleaner();
@@ -673,7 +685,7 @@ public static class InfrastructureServiceExtensions
                     sp.GetRequiredService<IOptions<TaskClassificationOptions>>(),
                     sp.GetRequiredService<ILogger<OllamaTaskClassifier>>());
             }
-            
+
             // Fallback: return keyword-only classifier when Ollama not available
             return new KeywordTaskClassifier(sp.GetRequiredService<ILogger<KeywordTaskClassifier>>());
         });
@@ -736,6 +748,23 @@ public static class InfrastructureServiceExtensions
         => isConfigured ? sp.GetKeyedService<IChatClient>(key) : null;
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private static OpenAIClientOptions CreateOpenAIClientOptions(IServiceProvider sp, string endpoint)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri(endpoint) };
+        var gatewayOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+        var environment = sp.GetService<IHostEnvironment>();
+
+        if (environment?.IsDevelopment() == true && gatewayOptions.AllowInvalidProviderCertificates)
+        {
+            sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Blaze.LlmGateway.Infrastructure.ProviderCertificates")
+                .LogWarning("Invalid provider certificate validation is enabled for Development OpenAI-compatible provider clients.");
+            options.Transport = InvalidProviderCertificateTransport.Value;
+        }
+
+        return options;
+    }
 
     private static string ToPascalCase(string profileName)
     {
