@@ -50,7 +50,7 @@ public sealed class CodebrewRouterChatClient(
 
         return providerKey switch
         {
-            "LmStudio" => gatewayOptions.Providers.LmStudio.Model,
+            "LmStudio"    => gatewayOptions.Providers.LmStudio.Model,
             "OllamaRouter" => gatewayOptions.Providers.OllamaRouter.Model,
             _ => providerKey
         };

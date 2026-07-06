@@ -173,7 +173,7 @@ public static class ServiceCollectionExtensions
         {
             var httpClient = sp.GetRequiredService<HttpClient>();
             var opts = sp.GetRequiredService<IOptions<LocalInferenceOptions>>();
-            var logger = sp.GetService<ILogger<RuntimeDownloadModelProvider>>()
+            var logger = sp.GetService<ILogger<RuntimeDownloadModelProvider>>() 
                 ?? new NullLogger<RuntimeDownloadModelProvider>();
             return new RuntimeDownloadModelProvider(httpClient, opts, logger);
         });
@@ -198,7 +198,7 @@ public static class ServiceCollectionExtensions
             var loggerFactory = sp.GetService<ILoggerFactory>() ?? new NullLoggerFactory();
             var logger = sp.GetService<ILogger<HybridLocalRemoteRoutingStrategy>>()
                 ?? loggerFactory.CreateLogger<HybridLocalRemoteRoutingStrategy>();
-
+            
             // routerClient is optional - pass null if not available
             return new HybridRoutingStrategyFactory(opts, modelProvider, null, loggerFactory, logger);
         });

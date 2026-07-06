@@ -32,27 +32,27 @@ public sealed class TiktokenTokenCounter : ITokenCounter
     public int CountTokens(IEnumerable<ChatMessage> messages, string? modelId = null)
     {
         var targetModel = string.IsNullOrWhiteSpace(modelId) ? _defaultModelId : modelId;
-
+        
         var tokenizer = _tokenizers.GetOrAdd(targetModel, model => ResolveTokenizer(model));
 
         int count = 0;
         foreach (var message in messages)
         {
             // Add a small overhead per message (e.g., for role tokens and structural tokens)
-            count += 4;
-
+            count += 4; 
+            
             if (!string.IsNullOrEmpty(message.Text))
             {
                 count += tokenizer.CountTokens(message.Text);
             }
-
+            
             // Estimate tokens for image and video content (DataContent and UriContent)
             count += EstimateImageTokens(message.Contents);
         }
-
+        
         // Add overhead for the assistant reply prime
         count += 3;
-
+        
         return count;
     }
 

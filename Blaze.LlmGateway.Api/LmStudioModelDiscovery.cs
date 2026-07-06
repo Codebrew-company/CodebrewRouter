@@ -32,7 +32,7 @@ public sealed class LmStudioModelDiscovery(
             // Use proper path joining to preserve the /v1 segment
             var normalizedBase = endpoint.TrimEnd('/');
             var modelsUrl = normalizedBase.EndsWith("/models") ? normalizedBase : $"{normalizedBase}/models";
-
+            
             logger.LogDebug("Querying LM Studio for available models at {Endpoint}", modelsUrl);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, modelsUrl);
@@ -44,17 +44,17 @@ public sealed class LmStudioModelDiscovery(
             }
 
             var response = await httpClient.SendAsync(request, cancellationToken);
-
+            
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogError("LM Studio /models endpoint returned {StatusCode}: {ReasonPhrase}",
+                logger.LogError("LM Studio /models endpoint returned {StatusCode}: {ReasonPhrase}", 
                     response.StatusCode, response.ReasonPhrase);
                 response.EnsureSuccessStatusCode();
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
             logger.LogDebug("LM Studio response body: {ResponseBody}", content.Substring(0, Math.Min(200, content.Length)));
-
+            
             try
             {
                 var modelsData = System.Text.Json.JsonSerializer.Deserialize<ModelsListResponse>(content);

@@ -29,7 +29,7 @@ if (ProviderCertificateValidationPolicy.ShouldAllowInvalidProviderCertificates(b
 {
     // Local-only opt-in for self-signed provider endpoints.
 #pragma warning disable CS0618
-    System.Net.ServicePointManager.ServerCertificateValidationCallback =
+    System.Net.ServicePointManager.ServerCertificateValidationCallback +=
         (sender, cert, chain, sslPolicyErrors) => true;
 #pragma warning restore CS0618
 }
@@ -347,12 +347,12 @@ app.Use(async (context, next) =>
 {
     var logger = context.RequestServices.GetService<ILogger<Program>>();
     logger?.LogInformation($"📥 [{context.Request.Method}] {context.Request.Path} - Content-Type: {context.Request.ContentType}");
-
+    
     if (context.Request.Path.Value?.Contains("/v1/chat") == true)
     {
         logger?.LogInformation("🎯 CHAT ENDPOINT ENTRY LOGGED");
     }
-
+    
     try
     {
         await next(context);

@@ -271,7 +271,7 @@ public class LocalModelAvailabilityServiceTests
         // Assert
         // The ObserveAvailabilityChanges should be observable without throwing
         Assert.NotNull(subscription);
-
+        
         subscription.Dispose();
     }
 

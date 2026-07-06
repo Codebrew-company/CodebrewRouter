@@ -41,7 +41,7 @@ public sealed class OllamaModelSyncValidator
         var fallbackEndpoint = _options.Providers.OllamaRouter.FallbackEndpoint;
         var requiredModel = _options.Providers.OllamaRouter.Model;
 
-        _logger.LogInformation("🔍 Validating Ollama model sync between {Primary} and {Fallback} (10s timeout)",
+        _logger.LogInformation("🔍 Validating Ollama model sync between {Primary} and {Fallback} (10s timeout)", 
             primaryEndpoint, fallbackEndpoint);
 
         try
@@ -64,7 +64,7 @@ public sealed class OllamaModelSyncValidator
             // Validate required model exists on PRIMARY
             if (!primaryModels.Contains(requiredModel))
             {
-                _logger.LogError("❌ Required model {Model} not found on PRIMARY endpoint {Endpoint}",
+                _logger.LogError("❌ Required model {Model} not found on PRIMARY endpoint {Endpoint}", 
                     requiredModel, primaryEndpoint);
                 return false;
             }
@@ -72,7 +72,7 @@ public sealed class OllamaModelSyncValidator
             // Validate required model exists on FALLBACK
             if (!fallbackModels.Contains(requiredModel))
             {
-                _logger.LogError("❌ Required model {Model} not found on FALLBACK endpoint {Endpoint}",
+                _logger.LogError("❌ Required model {Model} not found on FALLBACK endpoint {Endpoint}", 
                     requiredModel, fallbackEndpoint);
                 return false;
             }
@@ -94,7 +94,7 @@ public sealed class OllamaModelSyncValidator
                 return false;
             }
 
-            _logger.LogInformation("✅ Model sync validation PASSED. Both endpoints have identical models: {Models}",
+            _logger.LogInformation("✅ Model sync validation PASSED. Both endpoints have identical models: {Models}", 
                 string.Join(", ", primaryNames));
             return true;
         }

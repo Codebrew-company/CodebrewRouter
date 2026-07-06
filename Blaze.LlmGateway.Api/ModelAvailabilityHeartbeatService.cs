@@ -117,7 +117,7 @@ public sealed class ModelAvailabilityHeartbeatService(
         // Probe local models only (local-BYOK approach)
         logger.LogDebug("  ├─ Probing LM Studio");
         await ProbeLmStudioAsync(models, providers, checkedAt, cancellationToken);
-
+        
         logger.LogDebug("  ├─ Probing Ollama Router with failover");
         await ProbeOllamaWithFailoverAsync(
             modelId: _options.Providers.OllamaRouter.Model,
@@ -134,7 +134,7 @@ public sealed class ModelAvailabilityHeartbeatService(
         // Probe OpenCode Go cloud endpoint
         logger.LogDebug("  ├─ Probing OpenCode Go");
         await ProbeOpenCodeGoAsync(models, providers, checkedAt, cancellationToken);
-
+        
         registry.UpdateSnapshot(models, providers);
 
         var enabledModels = models.Count(model => model.Enabled);
@@ -144,10 +144,10 @@ public sealed class ModelAvailabilityHeartbeatService(
             enabledModels,
             disabledModels,
             models.Count);
-
+        
         foreach (var model in models)
         {
-            logger.LogDebug("  ├─ Model '{ModelId}' ({Provider}): {Status}",
+            logger.LogDebug("  ├─ Model '{ModelId}' ({Provider}): {Status}", 
                 model.Id, model.OwnedBy, model.Enabled ? "✅ enabled" : "❌ disabled");
         }
     }
@@ -430,7 +430,7 @@ public sealed class ModelAvailabilityHeartbeatService(
         try
         {
             using var timeoutCts = CreateTimeoutToken(cancellationToken);
-
+            
             // Create a temporary OllamaApiClient for the specified endpoint and probe with the configured model.
             // OllamaApiClient(Uri endpoint, string model) constructor creates a client targeting that endpoint.
             var ollamaClient = (IChatClient)new OllamaApiClient(new Uri(ollamaEndpoint), _options.Providers.OllamaRouter.Model);

@@ -24,7 +24,7 @@ public static class HermesCatalogPopulator
             var modelName = $"hermes-{profileName}"; // e.g. "hermes-derp-coder"
             var deploymentName = $"hermes-{profileName}-gw";
             var providerKey = $"Hermes_{ToPascalCase(profileName)}";
-
+            
             // Resolve endpoint override
             var endpoint = profileOpts.Endpoint;
             if (string.IsNullOrWhiteSpace(endpoint))

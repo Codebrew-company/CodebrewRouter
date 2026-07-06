@@ -24,7 +24,7 @@ public class LocalInferenceErrorHandlingTests
     {
         var inner = new FileNotFoundException("File not found");
         var exception = new LocalModelUnavailableException("Model unavailable", inner);
-
+        
         Assert.Equal("Model unavailable", exception.Message);
         Assert.Same(inner, exception.InnerException);
     }
@@ -41,7 +41,7 @@ public class LocalInferenceErrorHandlingTests
     {
         var inner = new HttpRequestException("Network error");
         var exception = new RemoteDiscoveryFailedException("Remote discovery failed", inner);
-
+        
         Assert.Equal("Remote discovery failed", exception.Message);
         Assert.Same(inner, exception.InnerException);
     }
@@ -58,7 +58,7 @@ public class LocalInferenceErrorHandlingTests
     {
         var inner = new InvalidOperationException("Bad state");
         var exception = new HealthCheckFailedException("Health check failed", inner);
-
+        
         Assert.Equal("Health check failed", exception.Message);
         Assert.Same(inner, exception.InnerException);
     }
@@ -90,7 +90,7 @@ public class LocalInferenceErrorHandlingTests
         var exception = new RemoteDiscoveryFailedException(
             "Network unreachable",
             new HttpRequestException("Connection timeout"));
-
+        
         try
         {
             throw exception;
@@ -108,7 +108,7 @@ public class LocalInferenceErrorHandlingTests
         var mockLogger = new Mock<ILogger<LocalModelAvailabilityService>>();
         var mockModelProvider = new Mock<IModelDistributionProvider>();
         var mockOptions = new Mock<Microsoft.Extensions.Options.IOptions<LocalInferenceOptions>>();
-
+        
         mockOptions.Setup(x => x.Value).Returns(new LocalInferenceOptions
         {
             CacheAvailabilityTtlSeconds = 60

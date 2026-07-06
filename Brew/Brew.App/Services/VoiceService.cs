@@ -62,7 +62,7 @@ public class VoiceService : IAsyncDisposable
             case BrewRingState.Listening:
                 await StopRecording();
                 break;
-                // Thinking / Speaking — ignore clicks, turn in progress
+            // Thinking / Speaking — ignore clicks, turn in progress
         }
     }
 

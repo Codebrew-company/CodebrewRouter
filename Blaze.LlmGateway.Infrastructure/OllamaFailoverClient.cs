@@ -64,7 +64,7 @@ public sealed class OllamaFailoverClient : DelegatingChatClient
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         IAsyncEnumerable<ChatResponseUpdate>? stream = null;
-
+        
         try
         {
             stream = InnerClient.GetStreamingResponseAsync(messages, options, cancellationToken);

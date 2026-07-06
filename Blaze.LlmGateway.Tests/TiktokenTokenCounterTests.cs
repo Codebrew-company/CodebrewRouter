@@ -71,10 +71,10 @@ public sealed class TiktokenTokenCounterTests
 
         // Assert
         Assert.True(count > 0, "Expected positive token count even with fallback");
-
+        
         // Verify registry was queried
         _mockRegistry.Verify(r => r.GetTokenizer("deepseek-v4-pro"), Times.Once);
-
+        
         // Verify warning was logged
         _mockLogger.Verify(
             x => x.Log(
@@ -197,7 +197,7 @@ public sealed class TiktokenTokenCounterTests
             "gpt-4o",
             registry: _mockRegistry.Object,
             logger: _mockLogger.Object);
-
+        
         var messages = new[] { new ChatMessage(ChatRole.User, "Test") };
 
         // Act & Assert: No exception
@@ -246,7 +246,7 @@ public sealed class TiktokenTokenCounterTests
         // Act & Assert: Exception from registry should be caught and fallback used
         var count = counter.CountTokens(messages, "test-model");
         Assert.True(count > 0, "Should fall back to default encoding on registry exception");
-
+        
         // Verify error was logged
         _mockLogger.Verify(
             x => x.Log(

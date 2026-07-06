@@ -26,14 +26,14 @@ public sealed class MockChatClient(ILogger<MockChatClient> logger) : IChatClient
     {
         logger.LogInformation("🎭 MockChatClient streaming...");
         yield return new ChatResponseUpdate { Role = ChatRole.Assistant };
-
+        
         var response = "Mock response streaming";
         foreach (var word in response.Split(" "))
         {
             await Task.Delay(10, cancellationToken);
             yield return new ChatResponseUpdate { };
         }
-
+        
         yield return new ChatResponseUpdate { FinishReason = ChatFinishReason.Stop };
     }
 

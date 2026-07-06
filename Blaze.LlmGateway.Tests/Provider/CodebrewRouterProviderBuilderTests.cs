@@ -104,7 +104,7 @@ public class CodebrewRouterProviderBuilderTests
         services
             .AddCodebrewRouterProvider(options)
             .Build();
-
+        
         var sp = services.BuildServiceProvider();
 
         // Assert - Verify the options were registered
@@ -119,10 +119,10 @@ public class CodebrewRouterProviderBuilderTests
     {
         // Arrange
         var services = CreateServiceCollection();
-        var options = new CodebrewRouterProviderOptions
-        {
-            LocalEndpoint = "",
-            TestMode = true
+        var options = new CodebrewRouterProviderOptions 
+        { 
+            LocalEndpoint = "", 
+            TestMode = true 
         };
 
         // Act & Assert
@@ -138,7 +138,7 @@ public class CodebrewRouterProviderBuilderTests
         var options = CreateValidOptions();
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() =>
+        Assert.Throws<ArgumentNullException>(() => 
             services.AddCodebrewRouterProvider(options));
     }
 
@@ -150,7 +150,7 @@ public class CodebrewRouterProviderBuilderTests
         CodebrewRouterProviderOptions options = null!;
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() =>
+        Assert.Throws<ArgumentNullException>(() => 
             services.AddCodebrewRouterProvider(options));
     }
 

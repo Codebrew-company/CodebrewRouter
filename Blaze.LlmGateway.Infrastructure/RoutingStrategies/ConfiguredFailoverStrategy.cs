@@ -18,7 +18,7 @@ public class ConfiguredFailoverStrategy(
     {
         if (_failoverChains.TryGetValue(primary, out var chain))
         {
-            logger.LogDebug("Failover chain for {Primary}: {Fallbacks}",
+            logger.LogDebug("Failover chain for {Primary}: {Fallbacks}", 
                 primary, string.Join(" → ", chain));
             return chain.AsReadOnly();
         }
@@ -47,7 +47,7 @@ public class ConfiguredFailoverStrategy(
                     .ToList();
 
                 _failoverChains[destination] = fallbacks;
-                logger.LogInformation("Registered failover chain for {Destination}: {Fallbacks}",
+                logger.LogInformation("Registered failover chain for {Destination}: {Fallbacks}", 
                     destination, string.Join(" → ", fallbacks));
             }
         }

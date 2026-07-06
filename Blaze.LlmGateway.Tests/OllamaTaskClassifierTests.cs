@@ -33,14 +33,14 @@ public class OllamaTaskClassifierTests
     // ── Exact match ───────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("Reasoning", TaskType.Reasoning)]
-    [InlineData("Coding", TaskType.Coding)]
-    [InlineData("Research", TaskType.Research)]
+    [InlineData("Reasoning",             TaskType.Reasoning)]
+    [InlineData("Coding",                TaskType.Coding)]
+    [InlineData("Research",              TaskType.Research)]
     [InlineData("VisionObjectDetection", TaskType.VisionObjectDetection)]
-    [InlineData("Speech", TaskType.Speech)]
-    [InlineData("Creative", TaskType.Creative)]
-    [InlineData("DataAnalysis", TaskType.DataAnalysis)]
-    [InlineData("General", TaskType.General)]
+    [InlineData("Speech",                TaskType.Speech)]
+    [InlineData("Creative",              TaskType.Creative)]
+    [InlineData("DataAnalysis",          TaskType.DataAnalysis)]
+    [InlineData("General",               TaskType.General)]
     public async Task ReturnsExactMatch_ForAllTaskTypes(string routerResponse, TaskType expected)
     {
         var mockRouter = new Mock<IChatClient>();

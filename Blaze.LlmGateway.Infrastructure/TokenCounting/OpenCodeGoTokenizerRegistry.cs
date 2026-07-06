@@ -90,8 +90,8 @@ public sealed class OpenCodeGoTokenizerRegistry : ITokenizerRegistry
         }
 
         var normalized = modelId.ToLowerInvariant();
-        return _accuracyMetadata.TryGetValue(normalized, out var metadata)
-            ? metadata
+        return _accuracyMetadata.TryGetValue(normalized, out var metadata) 
+            ? metadata 
             : "gpt-4o fallback (~80% accuracy)";
     }
 
@@ -180,7 +180,7 @@ public sealed class OpenCodeGoTokenizerRegistry : ITokenizerRegistry
             {
                 _logger.LogDebug("DeepSeek tokenizer for '{ModelId}' not available from HuggingFace; will use fallback.", modelId);
             }
-
+            
             return tokenizer;
         }
         catch (Exception ex)
@@ -221,7 +221,7 @@ public sealed class OpenCodeGoTokenizerRegistry : ITokenizerRegistry
             {
                 _logger.LogDebug("GLM tokenizer for '{ModelId}' not available from HuggingFace; will use fallback.", modelId);
             }
-
+            
             return tokenizer;
         }
         catch (Exception ex)
@@ -250,7 +250,7 @@ public sealed class OpenCodeGoTokenizerRegistry : ITokenizerRegistry
             // For now, fall back to default encoding with logged guidance for ops
             _logger.LogDebug("HuggingFace tokenizer for '{HfRepo}' not yet cached. " +
                 "To enable native tokenization, download tokenizer.json from HF and place at: " +
-                "%APPDATA%\\Blaze.LlmGateway\\tokenizer-cache\\{HfRepo}_tokenizer.json",
+                "%APPDATA%\\Blaze.LlmGateway\\tokenizer-cache\\{HfRepo}_tokenizer.json", 
                 hfRepo);
             return null;
         }

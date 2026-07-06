@@ -108,8 +108,8 @@ public class HealthCheckOptions
     /// Custom failure status threshold.
     /// Default: Unhealthy.
     /// </summary>
-    public Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus FailureStatus
-    { get; set; } = Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy;
+    public Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus FailureStatus 
+        { get; set; } = Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy;
 }
 
 /// <summary>

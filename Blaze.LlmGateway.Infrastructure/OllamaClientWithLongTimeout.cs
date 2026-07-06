@@ -21,13 +21,13 @@ public static class OllamaClientExtensions
         TimeSpan timeout)
     {
         var client = new OllamaApiClient(baseUri, model);
-
+        
         try
         {
             // OllamaApiClient has a private _httpClient field
-            var httpClientField = typeof(OllamaApiClient).GetField("_httpClient",
+            var httpClientField = typeof(OllamaApiClient).GetField("_httpClient", 
                 BindingFlags.NonPublic | BindingFlags.Instance);
-
+            
             if (httpClientField?.GetValue(client) is HttpClient httpClient)
             {
                 httpClient.Timeout = timeout;
@@ -38,7 +38,7 @@ public static class OllamaClientExtensions
             // If reflection fails, just use the default client
             // (The old timeout limitation will still apply, but at least it won't crash)
         }
-
+        
         return client;
     }
 }

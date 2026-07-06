@@ -79,38 +79,38 @@ public sealed class ToolOutputCompressingChatClient(
             switch (content)
             {
                 case TextContent text when !string.IsNullOrEmpty(text.Text):
+                {
+                    var result = ToolOutputCompressor.Compress(text.Text, compressionOptions);
+                    if (result.SavedChars > 0)
                     {
-                        var result = ToolOutputCompressor.Compress(text.Text, compressionOptions);
-                        if (result.SavedChars > 0)
-                        {
-                            totalSaved += result.SavedChars;
-                            changed = true;
-                            newContents.Add(new TextContent(result.Text));
-                        }
-                        else
-                        {
-                            newContents.Add(content);
-                        }
-
-                        break;
+                        totalSaved += result.SavedChars;
+                        changed = true;
+                        newContents.Add(new TextContent(result.Text));
                     }
+                    else
+                    {
+                        newContents.Add(content);
+                    }
+
+                    break;
+                }
 
                 case FunctionResultContent { Result: string resultText } functionResult when !string.IsNullOrEmpty(resultText):
+                {
+                    var result = ToolOutputCompressor.Compress(resultText, compressionOptions);
+                    if (result.SavedChars > 0)
                     {
-                        var result = ToolOutputCompressor.Compress(resultText, compressionOptions);
-                        if (result.SavedChars > 0)
-                        {
-                            totalSaved += result.SavedChars;
-                            changed = true;
-                            newContents.Add(new FunctionResultContent(functionResult.CallId, result.Text));
-                        }
-                        else
-                        {
-                            newContents.Add(content);
-                        }
-
-                        break;
+                        totalSaved += result.SavedChars;
+                        changed = true;
+                        newContents.Add(new FunctionResultContent(functionResult.CallId, result.Text));
                     }
+                    else
+                    {
+                        newContents.Add(content);
+                    }
+
+                    break;
+                }
 
                 default:
                     newContents.Add(content);
