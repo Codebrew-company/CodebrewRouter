@@ -25,15 +25,6 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-if (ProviderCertificateValidationPolicy.ShouldAllowInvalidProviderCertificates(builder.Environment, builder.Configuration))
-{
-    // Local-only opt-in for self-signed provider endpoints.
-#pragma warning disable CS0618
-    System.Net.ServicePointManager.ServerCertificateValidationCallback +=
-        (sender, cert, chain, sslPolicyErrors) => true;
-#pragma warning restore CS0618
-}
-
 builder.AddServiceDefaults();            // FIRST — register OTel/health before anything else
 
 FoundryConfigurationAliases.AddFoundryEnvironmentAliases(builder.Configuration);
@@ -347,12 +338,12 @@ app.Use(async (context, next) =>
 {
     var logger = context.RequestServices.GetService<ILogger<Program>>();
     logger?.LogInformation($"📥 [{context.Request.Method}] {context.Request.Path} - Content-Type: {context.Request.ContentType}");
-    
+
     if (context.Request.Path.Value?.Contains("/v1/chat") == true)
     {
         logger?.LogInformation("🎯 CHAT ENDPOINT ENTRY LOGGED");
     }
-    
+
     try
     {
         await next(context);
