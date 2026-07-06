@@ -37,14 +37,14 @@ jobs:
           fi
 
           if [ -n "$BASE_SHA" ] && ! [[ "$BASE_SHA" =~ ^0+$ ]]; then
-            CHANGED_FILES="$(git diff --name-only "$BASE_SHA" HEAD -- '*.cs')"
+            mapfile -t CHANGED_FILES < <(git diff --name-only "$BASE_SHA" HEAD -- '*.cs')
           else
-            CHANGED_FILES="$(git ls-files '*.cs')"
+            mapfile -t CHANGED_FILES < <(git ls-files '*.cs')
           fi
 
-          if [ -z "$CHANGED_FILES" ]; then
+          if [ "${#CHANGED_FILES[@]}" -eq 0 ]; then
             echo "No C# files changed; skipping dotnet format."
             exit 0
           fi
 
-          dotnet format --verify-no-changes --no-restore --include $CHANGED_FILES
+          dotnet format --verify-no-changes --no-restore --include "${CHANGED_FILES[@]}"
