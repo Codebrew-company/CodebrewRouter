@@ -13,11 +13,13 @@ using Blaze.LlmGateway.Infrastructure.RoutingStrategies.Catalog;
 using Blaze.LlmGateway.Infrastructure.TaskClassification;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OpenAI;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 // Alias: existing routing strategy system (pre-catalog)
 using LegacyRoutingStrategy = Blaze.LlmGateway.Infrastructure.RoutingStrategies.IRoutingStrategy;
 
@@ -67,7 +69,7 @@ public static class InfrastructureServiceExtensions
                 var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
-                    new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+                    CreateOpenAIClientOptions(sp, opts.Endpoint));
                 return WrapWithRateLimit(sp, "LmStudio", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
@@ -100,7 +102,7 @@ public static class InfrastructureServiceExtensions
                 var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
                 var client = new OpenAIClient(
                     new ApiKeyCredential(apiKey),
-                    new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) });
+                    CreateOpenAIClientOptions(sp, opts.Endpoint));
                 return WrapWithRateLimit(sp, "DerpYardly", client.GetChatClient(opts.Model).AsIChatClient()
                     .AsBuilder()
                     .UseFunctionInvocation()
@@ -125,7 +127,7 @@ public static class InfrastructureServiceExtensions
             var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
             return new OpenAIClient(
                 new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions { Endpoint = new Uri(opts.BaseUrl) });
+                CreateOpenAIClientOptions(sp, opts.BaseUrl));
         });
 
         var tokenCounterOcg = default(Blaze.LlmGateway.Infrastructure.TokenCounting.ITokenCounter);
@@ -205,7 +207,7 @@ public static class InfrastructureServiceExtensions
 
                     var client = new OpenAIClient(
                         new ApiKeyCredential(apiKey),
-                        new OpenAIClientOptions { Endpoint = new Uri(endpoint) });
+                        CreateOpenAIClientOptions(sp, endpoint));
 
                     return WrapWithRateLimit(sp, key, client.GetChatClient(modelName).AsIChatClient()
                         .AsBuilder()
@@ -282,7 +284,7 @@ public static class InfrastructureServiceExtensions
                         IChatClient BuildForCredential(string credential)
                             => new OpenAIClient(
                                     new ApiKeyCredential(credential),
-                                    new OpenAIClientOptions { Endpoint = new Uri(deployment.Endpoint!) })
+                                    CreateOpenAIClientOptions(sp, deployment.Endpoint!))
                                 .GetChatClient(modelName).AsIChatClient()
                                 .AsBuilder()
                                 .UseFunctionInvocation()
@@ -736,6 +738,24 @@ public static class InfrastructureServiceExtensions
         => isConfigured ? sp.GetKeyedService<IChatClient>(key) : null;
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private static OpenAIClientOptions CreateOpenAIClientOptions(IServiceProvider sp, string endpoint)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri(endpoint) };
+        var gatewayOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+        var environment = sp.GetService<IHostEnvironment>();
+
+        if (environment?.IsDevelopment() == true && gatewayOptions.AllowInvalidProviderCertificates)
+        {
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            };
+            options.Transport = new HttpClientPipelineTransport(new HttpClient(handler, disposeHandler: true));
+        }
+
+        return options;
+    }
 
     private static string ToPascalCase(string profileName)
     {

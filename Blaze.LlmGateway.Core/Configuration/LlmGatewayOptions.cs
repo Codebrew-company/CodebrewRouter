@@ -10,6 +10,11 @@ public class LlmGatewayOptions
     /// </summary>
     public bool OfflineOnly { get; set; }
 
+    /// <summary>
+    /// Development-only escape hatch for self-signed OpenAI-compatible provider endpoints.
+    /// </summary>
+    public bool AllowInvalidProviderCertificates { get; set; }
+
     public ProvidersOptions Providers { get; set; } = new();
     public RoutingOptions Routing { get; set; } = new();
     public LocalInferenceOptions LocalInference { get; set; } = new();
