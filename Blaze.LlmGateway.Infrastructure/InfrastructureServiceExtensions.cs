@@ -27,6 +27,16 @@ namespace Blaze.LlmGateway.Infrastructure;
 
 public static class InfrastructureServiceExtensions
 {
+    private static readonly Lazy<PipelineTransport> InvalidProviderCertificateTransport = new(() =>
+    {
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+
+        return new HttpClientPipelineTransport(new HttpClient(handler, disposeHandler: true));
+    });
+
     public static IServiceCollection AddLlmProviders(this IServiceCollection services)
     {
         // TEMPORARY: Disable OllamaLocal registration due to connectivity issues
@@ -747,11 +757,10 @@ public static class InfrastructureServiceExtensions
 
         if (environment?.IsDevelopment() == true && gatewayOptions.AllowInvalidProviderCertificates)
         {
-            var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            options.Transport = new HttpClientPipelineTransport(new HttpClient(handler, disposeHandler: true));
+            sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Blaze.LlmGateway.Infrastructure.ProviderCertificates")
+                .LogWarning("Invalid provider certificate validation is enabled for Development OpenAI-compatible provider clients.");
+            options.Transport = InvalidProviderCertificateTransport.Value;
         }
 
         return options;
