@@ -52,6 +52,9 @@ public class ProvidersOptions
     public OpenCodeGoOptions OpenCodeGo { get; set; } = new();
     public DerpYardlyOptions DerpYardly { get; set; } = new();
     public HermesProviderOptions Hermes { get; set; } = new();
+
+    /// <summary>P5 — subscription upstream providers (API-key P5a + opt-in OAuth P5b). Off by default.</summary>
+    public SubscriptionOptions Subscription { get; set; } = new();
 }
 
 public class OllamaRouterOptions

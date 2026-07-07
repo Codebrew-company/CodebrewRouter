@@ -331,6 +331,109 @@ public static class InfrastructureServiceExtensions
             }
         }
 
+        // ── P5a: subscription upstream providers (API-key path) ────────────────────
+        // Off unless LlmGateway:Providers:Subscription:Enabled. Each enabled API-key
+        // provider becomes a keyed OpenAI-compatible client (credential pool + rate
+        // limits, same shape as config-driven providers), tagged for the dashboard's
+        // subscription group. The documented ToS note is logged at registration.
+        // OAuth-kind providers are registered by the OAuth token service (P5b) instead.
+        using (var spTemp = services.BuildServiceProvider())
+        {
+            var subscription = spTemp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.Subscription;
+            if (subscription.Enabled)
+            {
+                var bootLog = spTemp.GetRequiredService<ILoggerFactory>().CreateLogger("Subscription");
+                foreach (var provider in subscription.Providers.Where(p => p.Enabled && !string.IsNullOrWhiteSpace(p.Name)))
+                {
+                    if (services.Any(d => d.ServiceType == typeof(IChatClient)
+                        && d.IsKeyedService
+                        && d.ServiceKey is string existingKey
+                        && string.Equals(existingKey, provider.Name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    if (provider.Kind == SubscriptionAuthKind.OAuth)
+                    {
+                        bootLog.LogInformation(
+                            "Subscription provider '{Name}' uses OAuth — registered by the OAuth token service (P5b) when configured.",
+                            provider.Name);
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(provider.Endpoint) || string.IsNullOrWhiteSpace(provider.Model))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(provider.TosNote))
+                    {
+                        bootLog.LogWarning("⚖️  Subscription provider '{Name}' ToS note: {Note}", provider.Name, provider.TosNote);
+                    }
+
+                    var entry = provider;
+                    services.AddKeyedSingleton<IChatClient>(entry.Name, (sp, _) =>
+                    {
+                        var log = sp.GetRequiredService<ILogger<ContextSizingChatClient>>();
+                        try
+                        {
+                            var tokenCounter = sp.GetRequiredService<TokenCounting.ITokenCounter>();
+                            var compactor = sp.GetRequiredService<IContextCompactor>();
+                            var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
+
+                            var credentials = new List<string>();
+                            if (!string.IsNullOrWhiteSpace(entry.ApiKey))
+                            {
+                                credentials.Add(entry.ApiKey);
+                            }
+
+                            credentials.AddRange(entry.ApiKeys.Where(k => !string.IsNullOrWhiteSpace(k)));
+                            credentials = [.. credentials.Distinct(StringComparer.Ordinal)];
+                            if (credentials.Count == 0)
+                            {
+                                credentials.Add("notneeded");
+                            }
+
+                            IChatClient BuildForCredential(string credential)
+                                => new OpenAIClient(
+                                        new ApiKeyCredential(credential),
+                                        CreateOpenAIClientOptions(sp, entry.Endpoint))
+                                    .GetChatClient(entry.Model).AsIChatClient()
+                                    .AsBuilder()
+                                    .UseFunctionInvocation()
+                                    .UseContextSizing(tokenCounter, compactor, sizingOptions,
+                                        entry.MaxContextTokens, entry.ReservedOutputTokens, entry.Model, log)
+                                    .Build();
+
+                            var client = credentials.Count == 1
+                                ? BuildForCredential(credentials[0])
+                                : new Quota.CredentialPoolChatClient(
+                                    [.. credentials.Select(BuildForCredential)],
+                                    "fill-first",
+                                    entry.Name,
+                                    sp.GetRequiredService<ILogger<Quota.CredentialPoolChatClient>>());
+
+                            if (entry.MaxRequestsPerMinute > 0 || entry.MaxTokensPerMinute > 0)
+                            {
+                                client = new RateLimiting.RateLimitingChatClient(
+                                    client,
+                                    new RateLimiting.RateLimitBucket(entry.MaxRequestsPerMinute, entry.MaxTokensPerMinute),
+                                    entry.Name,
+                                    sp.GetRequiredService<ILogger<RateLimiting.RateLimitingChatClient>>());
+                            }
+
+                            return WrapWithRateLimit(sp, entry.Name, client);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.LogWarning(ex, "⚠️ Failed to initialize subscription provider '{Name}'; using MockChatClient", entry.Name);
+                            return new MockChatClient(sp.GetRequiredService<ILogger<MockChatClient>>());
+                        }
+                    });
+                }
+            }
+        }
+
         return services;
     }
 
