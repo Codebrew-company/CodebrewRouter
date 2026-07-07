@@ -8,6 +8,7 @@ using Blaze.LlmGateway.Api.UsageTracking;
 using Blaze.LlmGateway.Core.Configuration;
 using Blaze.LlmGateway.Core.ModelCatalog;
 using Blaze.LlmGateway.Infrastructure;
+using Blaze.LlmGateway.Infrastructure.Providers.Oauth;
 using Blaze.LlmGateway.Infrastructure.Catalog;
 using Blaze.LlmGateway.LocalInference;
 using Microsoft.Agents.AI.DevUI;
@@ -174,6 +175,11 @@ builder.Services.AddHealthChecks()
 // Keyed provider clients + routing pipeline (MCP disabled for now)
 builder.Services.AddLlmProviders();
 builder.Services.AddLlmInfrastructure();
+
+// P5b: OAuth subscription reuse — registers token registry, refresh service, and
+// keyed OAuth clients ONLY when LlmGateway:Providers:Subscription:Enabled is on and
+// OAuth providers are configured. No-op (nothing registered) by default.
+builder.Services.AddSubscriptionOAuth();
 
 // P1.1: usage ledger decorator over the unkeyed router client.
 builder.Services.AddHttpContextAccessor();
