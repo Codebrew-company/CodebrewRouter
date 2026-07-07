@@ -42,6 +42,7 @@ public static class DashboardEndpoint
           .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.75rem; }
           .card { border:1px solid var(--muted); border-radius:10px; padding:.75rem 1rem; }
           .card h3 { margin:.1rem 0 .3rem; font-size:1rem; }
+          button.copy { float:right; font-size:.7rem; padding:.1rem .5rem; border:1px solid var(--muted); border-radius:5px; background:none; color:inherit; cursor:pointer; }
           .kpis { display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1rem; }
           .kpi b { display:block; font-size:1.4rem; }
           pre { background:#8881; padding:.75rem; border-radius:8px; overflow-x:auto; font-size:.82rem; }
@@ -74,11 +75,15 @@ public static class DashboardEndpoint
             <span class="kpi"><b id="homeModels">–</b>models</span>
           </div>
           <h2>Connect a CLI tool</h2>
+          <p><small class="muted">Mint a gateway key on the Keys tab, then paste a recipe. Models: <code>codebrewRouter</code> · <code>auto</code> · <code>fusion</code>.</small></p>
           <div class="cards">
-            <div class="card"><h3>Claude Code</h3><pre id="recipeClaude"></pre></div>
-            <div class="card"><h3>Codex CLI</h3><pre id="recipeCodex"></pre></div>
-            <div class="card"><h3>OpenCode / Cline / Continue</h3><pre id="recipeOpenAi"></pre></div>
-            <div class="card"><h3>curl smoke test</h3><pre id="recipeCurl"></pre></div>
+            <div class="card"><h3>Claude Code <button class="copy" data-copy="recipeClaude">copy</button></h3><pre id="recipeClaude"></pre></div>
+            <div class="card"><h3>Codex CLI <button class="copy" data-copy="recipeCodex">copy</button></h3><pre id="recipeCodex"></pre></div>
+            <div class="card"><h3>Cursor <button class="copy" data-copy="recipeCursor">copy</button></h3><pre id="recipeCursor"></pre></div>
+            <div class="card"><h3>Cline / Roo / Continue <button class="copy" data-copy="recipeOpenAi">copy</button></h3><pre id="recipeOpenAi"></pre></div>
+            <div class="card"><h3>OpenCode <button class="copy" data-copy="recipeOpenCode">copy</button></h3><pre id="recipeOpenCode"></pre></div>
+            <div class="card"><h3>GitHub Copilot CLI <button class="copy" data-copy="recipeCopilot">copy</button></h3><pre id="recipeCopilot"></pre></div>
+            <div class="card"><h3>curl smoke test <button class="copy" data-copy="recipeCurl">copy</button></h3><pre id="recipeCurl"></pre></div>
           </div>
         </section>
 
@@ -153,9 +158,21 @@ public static class DashboardEndpoint
           const base = location.origin;
           $("recipeClaude").textContent = `export ANTHROPIC_BASE_URL=${base}\nexport ANTHROPIC_API_KEY=<gateway key>\nclaude`;
           $("recipeCodex").textContent = `export OPENAI_BASE_URL=${base}/v1\nexport OPENAI_API_KEY=<gateway key>\ncodex`;
+          $("recipeCursor").textContent = `Cursor → Settings → Models → OpenAI\nBase URL:  ${base}/v1\nAPI key:   <gateway key>\nModel:     codebrewRouter`;
           $("recipeOpenAi").textContent = `Base URL: ${base}/v1\nAPI key:  <gateway key>\nModel:    codebrewRouter | auto | fusion`;
+          $("recipeOpenCode").textContent = `export OPENAI_BASE_URL=${base}/v1\nexport OPENAI_API_KEY=<gateway key>\nopencode`;
+          $("recipeCopilot").textContent = `# Prefer the ToS-clean GitHub Models path.\nBase URL: ${base}/v1\nAPI key:  <gateway key>\nModel:    codebrewRouter`;
           $("recipeCurl").textContent = `curl ${base}/v1/chat/completions \\\n  -H "Authorization: Bearer <gateway key>" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}'`;
         }
+
+        document.querySelectorAll("button.copy").forEach(button => button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText($(button.dataset.copy).textContent);
+            const original = button.textContent;
+            button.textContent = "copied";
+            setTimeout(() => { button.textContent = original; }, 1200);
+          } catch { setStatus("Clipboard blocked — select the text manually."); }
+        }));
 
         async function load(tab) {
           setStatus("");
