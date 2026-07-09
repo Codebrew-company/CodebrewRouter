@@ -411,3 +411,5 @@ proxmox-jobs.sqlite3
 
 # runtime protocol store (SQLite + legacy JSON)
 Blaze.LlmGateway.Api/App_Data/
+/proxmox-jobs.sqlite3-shm
+/proxmox-jobs.sqlite3-wal
