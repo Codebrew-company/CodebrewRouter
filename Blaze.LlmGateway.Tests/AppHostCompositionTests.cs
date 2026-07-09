@@ -32,14 +32,9 @@ public class AppHostCompositionTests
     {
         var root = FindRepositoryRoot();
         var source = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "AppHostComposition.cs"));
-        var normalizedSource = source.Replace("\r\n", "\n");
-
-        Assert.Contains(
-            "builder.AddScalarApiReference()\n            .WithApiReference(api)\n            .WaitFor(api)",
-            normalizedSource);
         Assert.True(
-            CountOccurrences(source, ".WaitFor(api)") >= 3,
-            "Scalar, OpenWebUI, and Agent DevUI should all wait for API readiness.");
+            CountOccurrences(source, ".WaitFor(api)") >= 2,
+            "OpenWebUI and Agent DevUI should both wait for API readiness.");
     }
 
     [Fact]

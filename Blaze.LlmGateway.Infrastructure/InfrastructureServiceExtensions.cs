@@ -61,39 +61,6 @@ public static class InfrastructureServiceExtensions
         });
         */
 
-        // LmStudio — local OpenAI-compatible endpoint exposed by LM Studio at /v1.
-        services.AddKeyedSingleton<IChatClient>("LmStudio", (sp, _) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.LmStudio;
-            var log = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
-            var logMock = sp.GetRequiredService<ILogger<MockChatClient>>();
-
-            log.LogDebug("Initializing LmStudio keyed client: {Endpoint}/{Model}", opts.Endpoint, opts.Model);
-
-            try
-            {
-                var tokenCounter = sp.GetRequiredService<TokenCounting.ITokenCounter>();
-                var compactor = sp.GetRequiredService<IContextCompactor>();
-                var sizingOptions = sp.GetRequiredService<IOptions<ContextSizingOptions>>();
-                var sizingLogger = sp.GetRequiredService<ILogger<ContextHandling.ContextSizingChatClient>>();
-                var apiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? "notneeded" : opts.ApiKey;
-                var client = new OpenAIClient(
-                    new ApiKeyCredential(apiKey),
-                    CreateOpenAIClientOptions(sp, opts.Endpoint));
-                return WrapWithRateLimit(sp, "LmStudio", client.GetChatClient(opts.Model).AsIChatClient()
-                    .AsBuilder()
-                    .UseFunctionInvocation()
-                    .UseContextSizing(tokenCounter, compactor, sizingOptions,
-                        opts.MaxContextTokens, opts.ReservedOutputTokens, opts.Model, sizingLogger)
-                    .Build());
-            }
-            catch (Exception ex)
-            {
-                log.LogWarning(ex, "⚠️ Failed to initialize LmStudio client; using MockChatClient for testing");
-                return new MockChatClient(logMock);
-            }
-        });
-
         // DerpYardly — local OpenAI-compatible endpoint exposed by the derp-yardly profile gateway.
         services.AddKeyedSingleton<IChatClient>("DerpYardly", (sp, _) =>
         {
@@ -531,15 +498,12 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IChatClient>(sp =>
         {
             var gatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
-            var providerOptions = gatewayOpts.Providers;
             var availabilityRegistry = sp.GetRequiredService<IModelAvailabilityRegistry>();
 
-            // Default: prefer embedded Gemma 4 (LocalGemma via LM-Kit), fall back to
-            // the Ollama-hosted Gemma 4 on .53:11434 (LmStudio), then give up.
+            // Default: prefer embedded Gemma 4 (LocalGemma via LM-Kit), else give up.
             var localInferenceEnabled = gatewayOpts.LocalInference.Enabled;
             var fallback =
                 GetConfiguredKeyedClient(sp, "LocalGemma", localInferenceEnabled && availabilityRegistry.IsProviderAvailable("LocalGemma"))
-                ?? GetConfiguredKeyedClient(sp, "LmStudio", HasValue(providerOptions.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
 
             var strategy = sp.GetRequiredService<LegacyRoutingStrategy>();
@@ -701,9 +665,9 @@ public static class InfrastructureServiceExtensions
             (IChatClient)new CodebrewRouterChatClient(
                 GetConfiguredKeyedClient(
                     sp,
-                    "LmStudio",
-                    HasValue(sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers.LmStudio.Model) &&
-                    sp.GetRequiredService<IModelAvailabilityRegistry>().IsProviderAvailable("LmStudio"))
+                    "LocalGemma",
+                    sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.LocalInference.Enabled &&
+                    sp.GetRequiredService<IModelAvailabilityRegistry>().IsProviderAvailable("LocalGemma"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available backing provider is available for codebrewRouter."),
                 sp.GetRequiredService<ITaskClassifier>(),
                 sp.GetRequiredService<IPromptCleaner>(),

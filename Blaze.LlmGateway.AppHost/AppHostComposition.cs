@@ -3,13 +3,16 @@ using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Scalar.Aspire;
 
 namespace Blaze.LlmGateway.AppHost;
 
 public static class AppHostComposition
 {
     private const string NetworkName = "codebrewRouter";
+
+    // Gateway HTTP port — the container's listen port (ASPNETCORE_URLS in the Dockerfile)
+    // and the host-published port.
+    private const int GatewayPort = 5022;
 
     public static DistributedApplication Build(string[] args)
     {
@@ -28,12 +31,6 @@ public static class AppHostComposition
             "http://192.168.16.53:11434");
         var ollamaModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:Model",
-            "gemma4:e4b");
-        var lmStudioEndpoint = builder.Configuration.GetValue(
-            "LlmGateway:Providers:LmStudio:Endpoint",
-            "http://192.168.16.53:11434/v1");
-        var lmStudioModel = builder.Configuration.GetValue(
-            "LlmGateway:Providers:LmStudio:Model",
             "gemma4:e4b");
         var openCodeGoApiKey = builder.Configuration.GetValue<string>(
             "LlmGateway:Providers:OpenCodeGo:ApiKey") ?? "";
@@ -57,12 +54,16 @@ public static class AppHostComposition
         // API Gateway — the core CodebrewRouter service
         // ═══════════════════════════════════════════════════════════════════
         aspireLogger.LogInformation("  ├─ Wiring API gateway...");
-        var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("gateway")
-            .WithHttpEndpoint(port: 5022, name: "http")
+        // Gateway runs as a container (built from Blaze.LlmGateway.Api/Dockerfile) so it joins
+        // the same Docker network as Open WebUI and is reachable by container DNS ("gateway"),
+        // instead of host.docker.internal. Build context is the repo root (the Dockerfile COPYs
+        // the .slnx + every project). Trade-off: a source change needs an image rebuild — no
+        // host-process hot reload. llm-cache volume persists the LM-Kit model between runs.
+        var api = builder.AddDockerfile("gateway", "..", "Blaze.LlmGateway.Api/Dockerfile")
+            .WithHttpEndpoint(port: GatewayPort, targetPort: GatewayPort, name: "http")
+            .WithVolume("llm-cache", "/app/.llm-cache")
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaBaseUrl)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaModel)
-            .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
-            .WithEnvironment("LlmGateway__Providers__LmStudio__Model", lmStudioModel)
             .WithEnvironment("LlmGateway__Providers__OpenCodeGo__ApiKey", openCodeGoApiKey)
             .WithEnvironment("LlmGateway__LocalInference__ModelPath", localInferenceModelPath)
             .WithEnvironment("LlmGateway__LocalInference__CacheDirectory", localInferenceCacheDirectory)
@@ -80,7 +81,6 @@ public static class AppHostComposition
         }
 
         aspireLogger.LogDebug("  │  ├─ Ollama: {Url} ({Model})", ollamaBaseUrl, ollamaModel);
-        aspireLogger.LogDebug("  │  ├─ LmStudio: {Endpoint} ({Model})", lmStudioEndpoint, lmStudioModel);
         aspireLogger.LogDebug("  │  ├─ LocalInference: runtime=LMKit, cache={CacheDirectory}", localInferenceCacheDirectory);
 
         // Clean up duplicate URLs on the dashboard tile.
@@ -106,8 +106,14 @@ public static class AppHostComposition
                 .WithVolume("blaze-openwebui-data", "/app/backend/data")
                 .WithEnvironment("WEBUI_AUTH", "False")
                 .WithEnvironment("ENABLE_OLLAMA_API", "False")
+                // Force env config to win on every boot. Default (true) caches the OpenAI
+                // connection in the volume on first run, so later env changes are ignored and
+                // the container keeps a stale gateway URL — the "no models" symptom.
+                .WithEnvironment("ENABLE_PERSISTENT_CONFIG", "False")
                 .WithEnvironment(ctx =>
                 {
+                    // Both are containers on the same Docker network now, so reach the gateway by
+                    // its container DNS name via Aspire's endpoint reference.
                     var apiEndpoint = api.GetEndpoint("http");
                     ctx.EnvironmentVariables["OPENAI_API_BASE_URL"] =
                         ReferenceExpression.Create($"{apiEndpoint}/v1");
@@ -138,6 +144,8 @@ public static class AppHostComposition
                 .WithHttpEndpoint(port: 8765, targetPort: 8765, name: "http", isProxied: false)
                 .WithEnvironment(ctx =>
                 {
+                    // agent-devui runs as a host executable (not a container), so localhost
+                    // reaches the gateway directly.
                     var apiEndpoint = api.GetEndpoint("http");
                     ctx.EnvironmentVariables["OPENAI_BASE_URL"] =
                         ReferenceExpression.Create($"{apiEndpoint}/v1");
@@ -151,13 +159,9 @@ public static class AppHostComposition
             aspireLogger.LogInformation("  ├─ Agent DevUI: disabled (DevUI:AgentFramework=true to enable)");
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // Scalar API Reference
-        // ═══════════════════════════════════════════════════════════════════
-        builder.AddScalarApiReference()
-            .WithApiReference(api)
-            .WaitFor(api);
-        aspireLogger.LogDebug("  ├─ Scalar API Reference");
+        // Scalar API Reference dropped from the AppHost: Scalar.Aspire's WithApiReference only
+        // accepts project resources, and the gateway is now a container. The gateway image
+        // already serves its own Scalar/OpenAPI at its endpoint, so use that directly.
 
         // ── After all resources start, label containers so Docker Desktop groups them ──
         builder.Eventing.Subscribe<AfterResourcesCreatedEvent>(async (@event, ct) =>

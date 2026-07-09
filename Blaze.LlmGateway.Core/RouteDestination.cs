@@ -5,7 +5,6 @@ public enum RouteDestination
     LocalGemma,
     
     OllamaRouter,
-    LmStudio,
 
     OpenCodeGo_DeepSeekV4Pro,
     OpenCodeGo_DeepSeekV4Flash,

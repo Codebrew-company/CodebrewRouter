@@ -346,7 +346,6 @@ public class LlmRoutingChatClient : DelegatingChatClient
         var (maxContext, reservedOutput) = destination switch
         {
             "OllamaRouter"  => (providers.OllamaRouter.MaxContextTokens,  providers.OllamaRouter.ReservedOutputTokens),
-            "LmStudio"      => (providers.LmStudio.MaxContextTokens,      providers.LmStudio.ReservedOutputTokens),
             var d when d.StartsWith("OpenCodeGo_", StringComparison.OrdinalIgnoreCase)
                             => (providers.OpenCodeGo.MaxContextTokens,    providers.OpenCodeGo.ReservedOutputTokens),
             _ => (int.MaxValue, 0)   // unknown → optimistic
