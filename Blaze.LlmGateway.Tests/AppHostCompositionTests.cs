@@ -64,7 +64,7 @@ public class AppHostCompositionTests
         var appHostConfig = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "appsettings.json"));
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 
-        const string openWebUiRelease = "v0.9.5";
+        const string openWebUiRelease = "v0.10.2";
 
         Assert.Contains("DevUI:OpenWebUIImageTag", source);
         Assert.Contains($"\"OpenWebUIImageTag\": \"{openWebUiRelease}\"", appHostConfig);

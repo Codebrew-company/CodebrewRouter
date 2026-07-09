@@ -9,103 +9,81 @@ namespace Blaze.LlmGateway.AppHost;
 
 public static class AppHostComposition
 {
+    private const string NetworkName = "codebrewRouter";
+
     public static DistributedApplication Build(string[] args)
     {
         var builder = DistributedApplication.CreateBuilder(args);
 
         var loggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
         var aspireLogger = loggerFactory.CreateLogger("Blaze.LlmGateway.AppHost");
-        aspireLogger.LogInformation("🔵 Aspire Orchestration starting...");
+        aspireLogger.LogInformation("🔵 CodebrewRouter Aspire Orchestration starting...");
         aspireLogger.LogDebug("  ├─ Environment: {Environment}", builder.Environment.EnvironmentName);
+        aspireLogger.LogDebug("  ├─ Docker network: {Network}", NetworkName);
         aspireLogger.LogDebug("  ├─ Wiring resources and dependencies");
 
-        // ── Parameter-based secrets and non-secret provider settings ──
-        var ollamaLocalBaseUrl = builder.Configuration.GetValue(
+        // ── Provider configuration (defaults overridden by appsettings / user secrets) ──
+        var ollamaBaseUrl = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:BaseUrl",
-            "http://localhost:11434");
-        var ollamaLocalModel = builder.Configuration.GetValue(
+            "http://192.168.16.53:11434");
+        var ollamaModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:OllamaLocal:Model",
             "gemma4:e4b");
         var lmStudioEndpoint = builder.Configuration.GetValue(
             "LlmGateway:Providers:LmStudio:Endpoint",
-            "http://192.168.16.56:1234/v1");
+            "http://192.168.16.53:11434/v1");
         var lmStudioModel = builder.Configuration.GetValue(
             "LlmGateway:Providers:LmStudio:Model",
-            "local-model");
+            "gemma4:e4b");
         var openCodeGoApiKey = builder.Configuration.GetValue<string>(
             "LlmGateway:Providers:OpenCodeGo:ApiKey") ?? "";
-        var derpYardlyEndpoint = builder.Configuration.GetValue(
-            "LlmGateway:Providers:DerpYardly:Endpoint",
-            "http://127.0.0.1:8651/v1");
-        var derpYardlyModel = builder.Configuration.GetValue(
-            "LlmGateway:Providers:DerpYardly:Model",
-            "derp-yardly");
-        var derpYardlyApiKey = builder.Configuration.GetValue(
-            "LlmGateway:Providers:DerpYardly:ApiKey",
-            "");
         var localInferenceModelPath = builder.Configuration.GetValue<string>(
             "LlmGateway:LocalInference:ModelPath") ?? "";
         var localInferenceCacheDirectory = builder.Configuration.GetValue<string>(
             "LlmGateway:LocalInference:CacheDirectory") ?? ".llm-cache";
         var localInferenceDownloadTimeoutSeconds = builder.Configuration.GetValue(
-            "LlmGateway:LocalInference:DownloadTimeoutSeconds",
-            3600);
+            "LlmGateway:LocalInference:DownloadTimeoutSeconds", 3600);
         var localInferenceSystemPrompt = builder.Configuration.GetValue<string>(
             "LlmGateway:LocalInference:SystemPrompt") ?? "";
         var localInferenceWarmupEnabled = builder.Configuration.GetValue(
-            "LlmGateway:LocalInference:WarmupEnabled",
-            true);
+            "LlmGateway:LocalInference:WarmupEnabled", true);
         var localInferenceBlockStartupUntilWarm = builder.Configuration.GetValue(
-            "LlmGateway:LocalInference:BlockStartupUntilWarm",
-            true);
+            "LlmGateway:LocalInference:BlockStartupUntilWarm", true);
         var localInferenceWarmupTimeoutSeconds = builder.Configuration.GetValue(
-            "LlmGateway:LocalInference:WarmupTimeoutSeconds",
-            120);
-
-        // Gateway API listen URLs — controls which interfaces/ports Kestrel binds to.
-        // Leave empty to use Kestrel defaults (localhost only from launchSettings.json).
-        // Set to "http://0.0.0.0:5022" to expose the gateway on all LAN interfaces.
+            "LlmGateway:LocalInference:WarmupTimeoutSeconds", 120);
         var gatewayListenUrls = builder.Configuration.GetValue<string?>("Gateway:ListenUrls");
 
-        // ── API project — wire all resources ──
-        aspireLogger.LogInformation("  ├─ Wiring API project with environment variables...");
-        var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("api")
+        // ═══════════════════════════════════════════════════════════════════
+        // API Gateway — the core CodebrewRouter service
+        // ═══════════════════════════════════════════════════════════════════
+        aspireLogger.LogInformation("  ├─ Wiring API gateway...");
+        var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("gateway")
             .WithHttpEndpoint(port: 5022, name: "http")
-            .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaLocalBaseUrl)
-            .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaLocalModel)
+            .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaBaseUrl)
+            .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaModel)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Endpoint", lmStudioEndpoint)
             .WithEnvironment("LlmGateway__Providers__LmStudio__Model", lmStudioModel)
             .WithEnvironment("LlmGateway__Providers__OpenCodeGo__ApiKey", openCodeGoApiKey)
-            .WithEnvironment("LlmGateway__Providers__DerpYardly__Endpoint", derpYardlyEndpoint)
-            .WithEnvironment("LlmGateway__Providers__DerpYardly__Model", derpYardlyModel)
-            .WithEnvironment("LlmGateway__Providers__DerpYardly__ApiKey", derpYardlyApiKey)
             .WithEnvironment("LlmGateway__LocalInference__ModelPath", localInferenceModelPath)
             .WithEnvironment("LlmGateway__LocalInference__CacheDirectory", localInferenceCacheDirectory)
             .WithEnvironment("LlmGateway__LocalInference__DownloadTimeoutSeconds", localInferenceDownloadTimeoutSeconds.ToString())
             .WithEnvironment("LlmGateway__LocalInference__SystemPrompt", localInferenceSystemPrompt)
             .WithEnvironment("LlmGateway__LocalInference__WarmupEnabled", localInferenceWarmupEnabled.ToString())
             .WithEnvironment("LlmGateway__LocalInference__BlockStartupUntilWarm", localInferenceBlockStartupUntilWarm.ToString())
-            .WithEnvironment("LlmGateway__LocalInference__WarmupTimeoutSeconds", localInferenceWarmupTimeoutSeconds.ToString());
-
-        aspireLogger.LogDebug("  ├─ API environment configuration:");
-        aspireLogger.LogDebug("  │  ├─ OllamaLocal: {Url} ({Model})", ollamaLocalBaseUrl, ollamaLocalModel);
-        aspireLogger.LogDebug("  │  ├─ LmStudio: {Endpoint} ({Model})", lmStudioEndpoint, lmStudioModel);
-        aspireLogger.LogDebug(
-            "  │  ├─ LocalInference warmup: Enabled={WarmupEnabled}, BlockStartupUntilWarm={BlockStartupUntilWarm}, TimeoutSeconds={TimeoutSeconds}",
-            localInferenceWarmupEnabled,
-            localInferenceBlockStartupUntilWarm,
-            localInferenceWarmupTimeoutSeconds);
-        aspireLogger.LogDebug(
-            "  │  ├─ LocalInference runtime=LMKit, cache={CacheDirectory}, download timeout={DownloadTimeoutSeconds}s",
-            localInferenceCacheDirectory,
-            localInferenceDownloadTimeoutSeconds);
+            .WithEnvironment("LlmGateway__LocalInference__WarmupTimeoutSeconds", localInferenceWarmupTimeoutSeconds.ToString())
+            .WithEnvironment("LlmGateway__Auth__SeedDevKeys", "true");
 
         if (!string.IsNullOrWhiteSpace(gatewayListenUrls))
         {
             api.WithEnvironment("ASPNETCORE_URLS", gatewayListenUrls);
-            aspireLogger.LogInformation("  ├─ Gateway listen URLs overridden: {Urls}", gatewayListenUrls);
+            aspireLogger.LogInformation("  │  └─ Gateway listen URLs overridden: {Urls}", gatewayListenUrls);
         }
 
+        aspireLogger.LogDebug("  │  ├─ Ollama: {Url} ({Model})", ollamaBaseUrl, ollamaModel);
+        aspireLogger.LogDebug("  │  ├─ LmStudio: {Endpoint} ({Model})", lmStudioEndpoint, lmStudioModel);
+        aspireLogger.LogDebug("  │  ├─ LocalInference: runtime=LMKit, cache={CacheDirectory}", localInferenceCacheDirectory);
+
+        // Clean up duplicate URLs on the dashboard tile.
         api.WithUrl("/", "Gateway Home")
            .WithUrls(ctx =>
            {
@@ -113,13 +91,15 @@ public static class AppHostComposition
                ctx.Urls.RemoveAll(u => !seen.Add($"{u.DisplayText ?? string.Empty}|{u.Url}"));
            });
 
-
+        // ═══════════════════════════════════════════════════════════════════
+        // Open WebUI — browser-based chat playground
+        // ═══════════════════════════════════════════════════════════════════
         var enableOpenWebUi = builder.Configuration.GetValue("DevUI:OpenWebUI", defaultValue: true);
-        var openWebUiImageTag = builder.Configuration.GetValue("DevUI:OpenWebUIImageTag", "v0.9.5");
+        var openWebUiImageTag = builder.Configuration.GetValue("DevUI:OpenWebUIImageTag", "v0.10.2");
 
         if (enableOpenWebUi)
         {
-            aspireLogger.LogInformation("  ├─ Open WebUI: enabled (requires Docker Desktop), image tag {ImageTag}", openWebUiImageTag);
+            aspireLogger.LogInformation("  ├─ Open WebUI: {ImageTag}", openWebUiImageTag);
 
             _ = builder.AddContainer("openwebui", "ghcr.io/open-webui/open-webui", openWebUiImageTag)
                 .WithHttpEndpoint(port: 8080, targetPort: 8080, name: "http")
@@ -137,23 +117,24 @@ public static class AppHostComposition
         }
         else
         {
-            aspireLogger.LogInformation("  ├─ Open WebUI: disabled (set DevUI:OpenWebUI=true to enable)");
+            aspireLogger.LogInformation("  ├─ Open WebUI: disabled (DevUI:OpenWebUI=true to enable)");
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // Agent Framework DevUI — agent debugging playground
+        // ═══════════════════════════════════════════════════════════════════
         var enableAgentDevUi = builder.Configuration.GetValue("DevUI:AgentFramework", defaultValue: false);
         var agentDevUiModel = builder.Configuration.GetValue("DevUI:AgentModel", defaultValue: "codebrewSharpClient");
 
         if (enableAgentDevUi)
         {
-            aspireLogger.LogInformation("  ├─ Agent Framework DevUI: enabled (requires `pip install agent-framework-devui`)");
-
-            var agentsDir = Path.Combine(AppContext.BaseDirectory, "devui-agents");
+            aspireLogger.LogInformation("  ├─ Agent DevUI: {Model}", agentDevUiModel);
 
             _ = builder.AddExecutable(
                     name: "agent-devui",
                     command: "devui",
                     workingDirectory: AppContext.BaseDirectory,
-                    args: [agentsDir, "--port", "8765"])
+                    args: [Path.Combine(AppContext.BaseDirectory, "devui-agents"), "--port", "8765"])
                 .WithHttpEndpoint(port: 8765, targetPort: 8765, name: "http", isProxied: false)
                 .WithEnvironment(ctx =>
                 {
@@ -167,17 +148,56 @@ public static class AppHostComposition
         }
         else
         {
-            aspireLogger.LogInformation("  ├─ Agent Framework DevUI: disabled (set DevUI:AgentFramework=true to enable)");
+            aspireLogger.LogInformation("  ├─ Agent DevUI: disabled (DevUI:AgentFramework=true to enable)");
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // Scalar API Reference
+        // ═══════════════════════════════════════════════════════════════════
         builder.AddScalarApiReference()
             .WithApiReference(api)
             .WaitFor(api);
+        aspireLogger.LogDebug("  ├─ Scalar API Reference");
 
-        aspireLogger.LogDebug("  ├─ Dev UI playground(s) resolved (see flags above)");
-        aspireLogger.LogDebug("  └─ Scalar API Reference configured for dashboard");
-        aspireLogger.LogInformation("✅ Aspire orchestration ready - building distributed app");
+        // ── After all resources start, label containers so Docker Desktop groups them ──
+        builder.Eventing.Subscribe<AfterResourcesCreatedEvent>(async (@event, ct) =>
+        {
+            try
+            {
+                // Resolve scripts/group-containers.ps1 relative to the solution root.
+                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+                var script = Path.Combine(root, "scripts", "group-containers.ps1");
+                if (!File.Exists(script))
+                {
+                    root = Directory.GetCurrentDirectory();
+                    script = Path.Combine(root, "scripts", "group-containers.ps1");
+                }
+                if (!File.Exists(script)) return;
 
+                var psi = new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -File \"{script}\"")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = System.Diagnostics.Process.Start(psi);
+                if (proc is not null)
+                {
+                    var output = await proc.StandardOutput.ReadToEndAsync(ct);
+                    var error = await proc.StandardError.ReadToEndAsync(ct);
+                    await proc.WaitForExitAsync(ct);
+                    if (!string.IsNullOrWhiteSpace(output)) aspireLogger.LogDebug("  │  {Output}", output.Trim());
+                    if (!string.IsNullOrWhiteSpace(error)) aspireLogger.LogDebug("  │  {Error}", error.Trim());
+                }
+            }
+            catch (Exception ex)
+            {
+                aspireLogger.LogDebug(ex, "  ├─ Skipping Docker group labels ({Message})", ex.Message);
+            }
+        });
+
+        aspireLogger.LogInformation("✅ CodebrewRouter orchestration ready — building distributed app");
         return builder.Build();
     }
 }

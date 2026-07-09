@@ -41,9 +41,11 @@ public sealed class ApiKeyCache(IProtocolStore store)
             }
 
             var keys = await store.ListApiKeysAsync(cancellationToken);
-            snapshot = keys
-                .Where(key => !string.IsNullOrEmpty(key.Key))
-                .ToDictionary(key => key.Key, key => key, StringComparer.Ordinal);
+            snapshot = new Dictionary<string, AdminApiKey>(StringComparer.Ordinal);
+            foreach (var key in keys.Where(k => !string.IsNullOrEmpty(k.Key)))
+            {
+                snapshot[key.Key] = key;
+            }
             _byKeyMaterial = snapshot;
             return snapshot;
         }

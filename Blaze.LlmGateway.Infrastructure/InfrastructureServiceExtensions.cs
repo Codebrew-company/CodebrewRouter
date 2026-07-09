@@ -530,10 +530,16 @@ public static class InfrastructureServiceExtensions
 
         services.AddSingleton<IChatClient>(sp =>
         {
-            var providerOptions = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value.Providers;
+            var gatewayOpts = sp.GetRequiredService<IOptions<LlmGatewayOptions>>().Value;
+            var providerOptions = gatewayOpts.Providers;
             var availabilityRegistry = sp.GetRequiredService<IModelAvailabilityRegistry>();
+
+            // Default: prefer embedded Gemma 4 (LocalGemma via LM-Kit), fall back to
+            // the Ollama-hosted Gemma 4 on .53:11434 (LmStudio), then give up.
+            var localInferenceEnabled = gatewayOpts.LocalInference.Enabled;
             var fallback =
-                GetConfiguredKeyedClient(sp, "LmStudio", HasValue(providerOptions.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"))
+                GetConfiguredKeyedClient(sp, "LocalGemma", localInferenceEnabled && availabilityRegistry.IsProviderAvailable("LocalGemma"))
+                ?? GetConfiguredKeyedClient(sp, "LmStudio", HasValue(providerOptions.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"))
                 ?? (IChatClient)new UnavailableChatClient("No currently available LLM provider is available for the default chat client.");
 
             var strategy = sp.GetRequiredService<LegacyRoutingStrategy>();

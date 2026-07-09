@@ -273,10 +273,23 @@ public sealed class LocalGemmaWarmupService(
 
         try
         {
-            var client = serviceProvider.GetKeyedService<IChatClient>("LocalGemma")
-                ?? throw new InvalidOperationException("Keyed LocalGemma chat client is not registered.");
-            var modelState = ResolveModelState(client)
-                ?? throw new InvalidOperationException("LocalGemma chat client does not expose local model load state.");
+            var client = serviceProvider.GetKeyedService<IChatClient>("LocalGemma");
+            if (client is null)
+            {
+                const string reason = "Keyed LocalGemma chat client is not registered.";
+                state.Update(LocalGemmaWarmupStatus.Skipped, opts.ModelPath, reason, stopwatch.Elapsed);
+                LocalWarmupLog.Skip(logger, reason, opts.ModelPath);
+                return;
+            }
+
+            var modelState = ResolveModelState(client);
+            if (modelState is null)
+            {
+                const string reason = "LocalGemma client does not expose model load state — skipping warmup.";
+                state.Update(LocalGemmaWarmupStatus.Skipped, opts.ModelPath, reason, stopwatch.Elapsed);
+                LocalWarmupLog.Skip(logger, reason, opts.ModelPath);
+                return;
+            }
 
             // Transition to Downloading: covers both download (if URL) and local runtime load.
             state.Update(LocalGemmaWarmupStatus.Downloading, opts.ModelPath, "Resolving local Gemma model source.", stopwatch.Elapsed);

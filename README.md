@@ -160,14 +160,14 @@ For interactively testing `/v1/chat/completions` (including streaming and routin
 // Blaze.LlmGateway.AppHost/appsettings.json
 "DevUI": {
   "OpenWebUI": true,              // default: generic OpenAI-compatible chat UI
-  "OpenWebUIImageTag": "v0.9.5",  // Open WebUI container tag
+  "OpenWebUIImageTag": "v0.10.2",  // Open WebUI container tag
   "AgentFramework": false         // opt-in: Python Agent Framework DevUI
 }
 ```
 
 | Playground | Resource | Prereqs | Good for |
 |---|---|---|---|
-| **Open WebUI** | container `ghcr.io/open-webui/open-webui:v0.9.5`, port 8080 | Docker Desktop. `OPENAI_API_BASE_URL` is wired at `{api}/v1` automatically. Login disabled for local dev; chats persist in the `blaze-openwebui-data` volume. Override `DevUI:OpenWebUIImageTag` to test another release. | Everyday chat testing, comparing routed responses, multi-turn conversations. |
+| **Open WebUI** | container `ghcr.io/open-webui/open-webui:v0.10.2`, port 8080 | Docker Desktop. `OPENAI_API_BASE_URL` is wired at `{api}/v1` automatically. Login disabled for local dev; chats persist in the `blaze-openwebui-data` volume. Override `DevUI:OpenWebUIImageTag` to test another release. | Everyday chat testing, comparing routed responses, multi-turn conversations. |
 | **Agent Framework DevUI** | executable `devui` (port 8765) | Python 3.11+ with `pip install agent-framework-devui` (puts `devui` on PATH). AppHost passes the bundled `devui-agents/` directory containing a `gateway_agent` that chats through the gateway. | Trace / telemetry inspection and exercising the Python `agent-framework` SDK against the gateway. |
 
 Once `dotnet run --project Blaze.LlmGateway.AppHost` is up, open the Aspire dashboard and click the `openwebui` (or `agent-devui`) resource URL to reach the playground.
