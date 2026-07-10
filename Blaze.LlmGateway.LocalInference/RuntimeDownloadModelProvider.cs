@@ -75,7 +75,33 @@ public class RuntimeDownloadModelProvider : IModelDistributionProvider
             return null;
 
         var cachedPath = GetCachedFilePath(modelUrl);
-        return File.Exists(cachedPath) ? cachedPath : null;
+        return IsPlausibleModelFile(cachedPath) ? cachedPath : null;
+    }
+
+    // Model weights are hundreds of MB at minimum. A tiny cached file is a poisoned entry
+    // (aborted download / error page saved as the model) — observed live: an 821-byte file
+    // cached as gemma-4-12B, which LM-Kit then "loaded" and produced blank responses.
+    // ponytail: internal mutable so unit tests with byte-sized fixtures can lower it.
+    internal static long MinPlausibleModelBytes = 10L * 1024 * 1024;
+
+    private bool IsPlausibleModelFile(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists)
+        {
+            return false;
+        }
+
+        if (info.Length >= MinPlausibleModelBytes)
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Cached model file {Path} is only {Length} bytes — treating as a poisoned cache entry and deleting it.",
+            path, info.Length);
+        CleanupCorruptedFile(path);
+        return false;
     }
 
     /// <summary>
@@ -113,8 +139,8 @@ public class RuntimeDownloadModelProvider : IModelDistributionProvider
 
         var cachedPath = GetCachedFilePath(modelUrl);
 
-        // Return cached file if it already exists and passes checksum (if enabled)
-        if (File.Exists(cachedPath))
+        // Return cached file only if it is a plausible model (poisoned tiny entries get deleted).
+        if (IsPlausibleModelFile(cachedPath))
         {
             _logger.LogInformation("Model cache hit: {CachedPath}", cachedPath);
             return cachedPath;
@@ -147,11 +173,50 @@ public class RuntimeDownloadModelProvider : IModelDistributionProvider
                 using (var contentStream = await response.Content.ReadAsStreamAsync(cts.Token))
                 using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    await contentStream.CopyToAsync(fileStream, cts.Token);
+                    // Copy with a per-read inactivity timeout: a stalled CDN connection otherwise
+                    // hangs until the overall DownloadTimeoutSeconds (up to an hour) and, observed
+                    // live, leaves orphaned/partial artifacts. 60s without a single byte = abort.
+                    var buffer = new byte[1 << 20];
+                    while (true)
+                    {
+                        using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                        readCts.CancelAfter(TimeSpan.FromSeconds(60));
+                        int read;
+                        try
+                        {
+                            read = await contentStream.ReadAsync(buffer, readCts.Token);
+                        }
+                        catch (OperationCanceledException) when (!cts.Token.IsCancellationRequested)
+                        {
+                            throw new InvalidOperationException(
+                                $"Model download stalled (no data for 60s) from {modelUrl}.");
+                        }
+
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        await fileStream.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+                    }
+
                     await fileStream.FlushAsync(cts.Token);
                 }
 
                 _logger.LogInformation("Model downloaded to {TempPath}, moving to {CachedPath}", tempPath, cachedPath);
+
+                // Reject truncated downloads before they poison the cache.
+                var downloadedLength = new FileInfo(tempPath).Length;
+                var expectedLength = response.Content.Headers.ContentLength;
+                if (downloadedLength < MinPlausibleModelBytes ||
+                    (expectedLength.HasValue && downloadedLength != expectedLength.Value))
+                {
+                    CleanupCorruptedFile(tempPath);
+                    OpenCircuitBreaker();
+                    throw new InvalidOperationException(
+                        $"Downloaded model from {modelUrl} is {downloadedLength} bytes " +
+                        $"(expected {(expectedLength.HasValue ? expectedLength.Value.ToString() : $">= {MinPlausibleModelBytes}")}); discarding as corrupt.");
+                }
 
                 // Move temp file to cache location
                 File.Move(tempPath, cachedPath, overwrite: true);

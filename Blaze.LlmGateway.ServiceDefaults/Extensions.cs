@@ -113,9 +113,12 @@ public static class Extensions
         // See https://aka.ms/dotnet/aspire/healthchecks for details before enabling these endpoints in non-development environments.
         if (app.Environment.IsDevelopment())
         {
-            // All health checks must pass for app to be considered ready to accept traffic after starting
+            // All health checks must pass for app to be considered ready to accept traffic after starting.
+            // "probe"-tagged checks are excluded: they perform real model completions (paid providers)
+            // and are served on demand at their own endpoint (e.g. /health/models).
             app.MapHealthChecks(HealthEndpointPath, new HealthCheckOptions
             {
+                Predicate = r => !r.Tags.Contains("probe"),
                 ResultStatusCodes =
                 {
                     [HealthStatus.Healthy] = StatusCodes.Status200OK,

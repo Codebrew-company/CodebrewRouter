@@ -9,9 +9,10 @@ namespace Blaze.LlmGateway.AppHost;
 public static class AppHostComposition
 {
     private const string NetworkName = "codebrewRouter";
+    private const string DockerDesktopProjectName = "CodebrewRouter";
 
-    // Gateway HTTP port — the container's listen port (ASPNETCORE_URLS in the Dockerfile)
-    // and the host-published port.
+    // Gateway host-published HTTP port. Used for the project endpoint and the
+    // host.docker.internal URL the Open WebUI container uses to reach it.
     private const int GatewayPort = 5022;
 
     public static DistributedApplication Build(string[] args)
@@ -54,14 +55,17 @@ public static class AppHostComposition
         // API Gateway — the core CodebrewRouter service
         // ═══════════════════════════════════════════════════════════════════
         aspireLogger.LogInformation("  ├─ Wiring API gateway...");
-        // Gateway runs as a container (built from Blaze.LlmGateway.Api/Dockerfile) so it joins
-        // the same Docker network as Open WebUI and is reachable by container DNS ("gateway"),
-        // instead of host.docker.internal. Build context is the repo root (the Dockerfile COPYs
-        // the .slnx + every project). Trade-off: a source change needs an image rebuild — no
-        // host-process hot reload. llm-cache volume persists the LM-Kit model between runs.
-        var api = builder.AddDockerfile("gateway", "..", "Blaze.LlmGateway.Api/Dockerfile")
-            .WithHttpEndpoint(port: GatewayPort, targetPort: GatewayPort, name: "http")
-            .WithVolume("llm-cache", "/app/.llm-cache")
+        // Gateway runs as a host process (not a container): LM-Kit's native embedded-Gemma
+        // (LocalGemma) loads fine on the host but hangs on model load inside a Linux container.
+        // Open WebUI (containerized) reaches this host process via host.docker.internal, which
+        // ONLY works if the gateway binds 0.0.0.0 — the default launch profile binds
+        // localhost-only (https://localhost:7200;http://localhost:5022), invisible to containers.
+        // So: skip the launch profile, own port 5022 unproxied, and bind all interfaces.
+        var api = builder.AddProject<Projects.Blaze_LlmGateway_Api>("gateway", launchProfileName: null)
+            .WithHttpEndpoint(port: GatewayPort, name: "http", isProxied: false)
+            .WithEnvironment("ASPNETCORE_URLS", "http://0.0.0.0:" + GatewayPort)
+            // launchProfileName: null drops launchSettings env vars — set them explicitly.
+            .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__BaseUrl", ollamaBaseUrl)
             .WithEnvironment("LlmGateway__Providers__OllamaLocal__Model", ollamaModel)
             .WithEnvironment("LlmGateway__Providers__OpenCodeGo__ApiKey", openCodeGoApiKey)
@@ -102,6 +106,10 @@ public static class AppHostComposition
             aspireLogger.LogInformation("  ├─ Open WebUI: {ImageTag}", openWebUiImageTag);
 
             _ = builder.AddContainer("openwebui", "ghcr.io/open-webui/open-webui", openWebUiImageTag)
+                .WithContainerRuntimeArgs(
+                    "--label", $"com.docker.compose.project={DockerDesktopProjectName}",
+                    "--label", "com.docker.compose.service=openwebui",
+                    "--label", "com.docker.compose.container-number=1")
                 .WithHttpEndpoint(port: 8080, targetPort: 8080, name: "http")
                 .WithVolume("blaze-openwebui-data", "/app/backend/data")
                 .WithEnvironment("WEBUI_AUTH", "False")
@@ -112,14 +120,18 @@ public static class AppHostComposition
                 .WithEnvironment("ENABLE_PERSISTENT_CONFIG", "False")
                 .WithEnvironment(ctx =>
                 {
-                    // Both are containers on the same Docker network now, so reach the gateway by
-                    // its container DNS name via Aspire's endpoint reference.
-                    var apiEndpoint = api.GetEndpoint("http");
+                    // openwebui is a container; the gateway is a host process. Reach the host's
+                    // published port via host.docker.internal (Docker Desktop maps it to the host
+                    // loopback on Win/Mac). Fixed GatewayPort so the URL is stable across runs.
                     ctx.EnvironmentVariables["OPENAI_API_BASE_URL"] =
-                        ReferenceExpression.Create($"{apiEndpoint}/v1");
+                        $"http://host.docker.internal:{GatewayPort}/v1";
                     ctx.EnvironmentVariables["OPENAI_API_KEY"] = "sk-blaze-openwebui";
-                })
-                .WaitFor(api);
+                });
+            // No .WaitFor(api): api is a host project, and a container depending on a host
+            // resource makes Aspire build a container tunnel to it — which fails here
+            // ("gateway-http should have valid address"). openwebui reaches the gateway via
+            // host.docker.internal (no Aspire bridge), and refetches models when the UI loads,
+            // so start ordering doesn't matter.
         }
         else
         {
@@ -159,47 +171,13 @@ public static class AppHostComposition
             aspireLogger.LogInformation("  ├─ Agent DevUI: disabled (DevUI:AgentFramework=true to enable)");
         }
 
-        // Scalar API Reference dropped from the AppHost: Scalar.Aspire's WithApiReference only
-        // accepts project resources, and the gateway is now a container. The gateway image
-        // already serves its own Scalar/OpenAPI at its endpoint, so use that directly.
-
-        // ── After all resources start, label containers so Docker Desktop groups them ──
-        builder.Eventing.Subscribe<AfterResourcesCreatedEvent>(async (@event, ct) =>
-        {
-            try
-            {
-                // Resolve scripts/group-containers.ps1 relative to the solution root.
-                var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-                var script = Path.Combine(root, "scripts", "group-containers.ps1");
-                if (!File.Exists(script))
-                {
-                    root = Directory.GetCurrentDirectory();
-                    script = Path.Combine(root, "scripts", "group-containers.ps1");
-                }
-                if (!File.Exists(script)) return;
-
-                var psi = new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -File \"{script}\"")
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                using var proc = System.Diagnostics.Process.Start(psi);
-                if (proc is not null)
-                {
-                    var output = await proc.StandardOutput.ReadToEndAsync(ct);
-                    var error = await proc.StandardError.ReadToEndAsync(ct);
-                    await proc.WaitForExitAsync(ct);
-                    if (!string.IsNullOrWhiteSpace(output)) aspireLogger.LogDebug("  │  {Output}", output.Trim());
-                    if (!string.IsNullOrWhiteSpace(error)) aspireLogger.LogDebug("  │  {Error}", error.Trim());
-                }
-            }
-            catch (Exception ex)
-            {
-                aspireLogger.LogDebug(ex, "  ├─ Skipping Docker group labels ({Message})", ex.Message);
-            }
-        });
+        // Swagger + Scalar are served by the gateway itself (host process). The Scalar.Aspire
+        // aggregator is a container, and a container referencing the host gateway trips the same
+        // container-tunnel failure as openwebui — so link the gateway's built-in UIs on its
+        // dashboard tile instead.
+        api.WithUrl("/swagger", "Swagger UI")
+           .WithUrl("/scalar/v1", "Scalar API Reference");
+        aspireLogger.LogDebug("  ├─ Swagger + Scalar served by gateway (/swagger, /scalar/v1)");
 
         aspireLogger.LogInformation("✅ CodebrewRouter orchestration ready — building distributed app");
         return builder.Build();

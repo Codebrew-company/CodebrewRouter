@@ -271,6 +271,21 @@ public sealed class LocalGemmaWarmupService(
             return;
         }
 
+        // Hosted services start sequentially and Kestrel starts LAST, so awaiting a
+        // multi-GB model download here leaves the gateway with NO HTTP listener for the
+        // entire download (observed live: 20+ min of connection-refused, blank Open WebUI).
+        // BlockStartupUntilWarm=false must mean exactly that: warm in the background.
+        if (!opts.BlockStartupUntilWarm)
+        {
+            _ = Task.Run(() => WarmupAsync(opts, stopwatch, CancellationToken.None), CancellationToken.None);
+            return;
+        }
+
+        await WarmupAsync(opts, stopwatch, cancellationToken);
+    }
+
+    private async Task WarmupAsync(LocalInferenceOptions opts, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
         try
         {
             var client = serviceProvider.GetKeyedService<IChatClient>("LocalGemma");

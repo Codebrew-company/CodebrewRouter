@@ -67,7 +67,24 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
             yield break;
         }
 
-        await _inferenceLock.WaitAsync(cancellationToken);
+        // Requests queue here while another generation runs (LM-Kit is single-threaded).
+        // Open WebUI cancels queued side-requests routinely — treat that as a quiet stop,
+        // not an exception through the enumerator.
+        var lockTaken = false;
+        try
+        {
+            await _inferenceLock.WaitAsync(cancellationToken);
+            lockTaken = true;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        if (!lockTaken)
+        {
+            yield break;
+        }
+
         try
         {
             using var conversation = CreateConversation(messages);
@@ -113,16 +130,58 @@ internal sealed class LmKitLocalGemmaRuntime : ILocalGemmaRuntime
 
             try
             {
-                await foreach (var update in updates.Reader.ReadAllAsync(cancellationToken))
+                // Read the channel without letting cancellation surface as an exception:
+                // Open WebUI aggressively cancels its side requests (title/tag generation),
+                // and an OperationCanceledException thrown through this enumerator is pure
+                // noise — the consumer is gone. Stop quietly instead.
+                var cancelled = false;
+                while (!cancelled)
                 {
-                    yield return update;
+                    bool hasMore;
+                    try
+                    {
+                        hasMore = await updates.Reader.WaitToReadAsync(cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancelled = true;
+                        continue;
+                    }
+
+                    if (!hasMore)
+                    {
+                        break;
+                    }
+
+                    while (updates.Reader.TryRead(out var update))
+                    {
+                        yield return update;
+                    }
                 }
 
-                await generationTask;
+                if (!cancelled)
+                {
+                    await generationTask;
+                }
             }
             finally
             {
                 conversation.AfterTokenSampling -= HandleAfterTokenSampling;
+
+                // On cancellation ReadAllAsync throws and we land here while the native
+                // generation may still be running. Disposing the conversation (the enclosing
+                // using) and releasing the inference lock at that point lets the next request
+                // hit LM-Kit concurrently with a live generation — native crash/hang territory.
+                // Wait for the generation to finish before tearing anything down; its own
+                // failure already surfaced through the channel, so swallow it here.
+                try
+                {
+                    await generationTask;
+                }
+                catch
+                {
+                    // Observed via the channel reader (or deliberately cancelled) — ignore.
+                }
             }
         }
         finally

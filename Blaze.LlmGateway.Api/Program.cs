@@ -153,11 +153,17 @@ builder.Services.AddCodebrewRouterLocalProvider(builder.Configuration);
 
 // ============================================================================
 
+builder.Services.AddSingleton<ModelProbeHealthCheck>(); // singleton so the probe cache survives requests
 builder.Services.AddHealthChecks()
     .AddCheck<ModelProviderHealthCheck>("model_providers", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded)
     .AddCheck<ModelsLoadedHealthCheck>("models_loaded",
         failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
-        tags: ["models"]);
+        tags: ["models"])
+    // Deep per-model probe ("Hello, what model are you using?"): excluded from /health via
+    // the "probe" tag (real completions, paid tokens); served on demand at /health/models/probe.
+    .AddCheck<ModelProbeHealthCheck>("models_probe",
+        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+        tags: ["probe", "models-probe"]);
 
 // MCP integration disabled (microsoft-learn server connection issues)
 // To re-enable: uncomment below and ensure @microsoft/mcp-server-microsoft-learn is available
@@ -252,9 +258,9 @@ var aspireNote = isRunningUnderAspire ? " (via Aspire)" : " (standalone)";
 startupLogger.LogInformation("🟢 Blaze.LlmGateway.Api starting up{AspireNote}...", aspireNote);
 
 // Dev-time: seed known API keys for playground UIs (Open WebUI, DevUI, Scalar).
-// Only runs when LlmGateway:Auth:SeedDevKeys=true (set via launchSettings.json or AppHost env).
-if (app.Environment.IsDevelopment() &&
-    app.Configuration.GetValue("LlmGateway:Auth:SeedDevKeys", false))
+// SeedDevKeys (default false) is the gate — do NOT also require IsDevelopment(): a containerized
+// run defaults to Production, which would silently skip seeding and 401 Open WebUI's key.
+if (app.Configuration.GetValue("LlmGateway:Auth:SeedDevKeys", false))
 {
     using var seedScope = app.Services.CreateScope();
     var seedStore = seedScope.ServiceProvider.GetRequiredService<IProtocolStore>();
@@ -451,6 +457,39 @@ app.MapDashboard();
 startupLogger.LogInformation("  ├─ Dashboard available at /dashboard");
 
 // ── Brew API endpoints (consolidated from Brew.Api) ──
+
+// Deep per-model probe: real "Hello, what model are you using?" completion per catalog model.
+// On-demand only (excluded from /health via the "probe" tag); results cached 5 min.
+// (/health/models is the lighter models-loaded readiness check.)
+app.MapHealthChecks("/health/models/probe", new HealthCheckOptions
+{
+    Predicate = r => r.Tags.Contains("models-probe"),
+    ResultStatusCodes =
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = StatusCodes.Status200OK,
+        // Partial failures still return the report body.
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    },
+    ResponseWriter = async (httpContext, report) =>
+    {
+        httpContext.Response.ContentType = "application/json";
+        await httpContext.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            totalDurationMs = (long)report.TotalDuration.TotalMilliseconds,
+            checks = report.Entries.ToDictionary(
+                entry => entry.Key,
+                entry => new
+                {
+                    status = entry.Value.Status.ToString(),
+                    description = entry.Value.Description,
+                    models = entry.Value.Data
+                })
+        });
+    }
+});
+startupLogger.LogInformation("  ├─ Per-model probe available at /health/models/probe");
 
 // Health check (same as /health but at the Brew path for compat)
 app.MapGet("/api/health", () => Results.Ok(new { Status = "healthy", Timestamp = DateTime.UtcNow }))

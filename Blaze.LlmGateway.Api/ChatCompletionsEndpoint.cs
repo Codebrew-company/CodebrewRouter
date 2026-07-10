@@ -216,6 +216,12 @@ public static class ChatCompletionsEndpoint
             streamSw.Stop();
             LogRouter(logger, new RouterStreamCompleteEvent(chunkCount, model, model, DirectTaskType, streamSw.ElapsedMilliseconds));
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Client disconnected mid-stream (Open WebUI cancels side requests routinely).
+            // Routine, not an error — and nothing further can be written to the socket.
+            logger?.LogDebug("  └─ Client disconnected mid-stream for {Model}; stream aborted quietly", model);
+        }
         catch (Exception ex)
         {
             LogRouter(logger, new RouterFailEvent(1, model, model, ex.Message), LogLevel.Error);
@@ -231,14 +237,16 @@ public static class ChatCompletionsEndpoint
                 await enumerator.DisposeAsync();
             }
 
-            if (httpContext.Response.HasStarted ||
-                string.Equals(httpContext.Response.ContentType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+            // Skip the [DONE] marker when the client is gone: writing with the aborted
+            // token throws OperationCanceledException out of this finally block.
+            if (!ct.IsCancellationRequested &&
+                (httpContext.Response.HasStarted ||
+                 string.Equals(httpContext.Response.ContentType, "text/event-stream", StringComparison.OrdinalIgnoreCase)))
             {
                 await httpContext.Response.WriteAsync("data: [DONE]\n\n", ct);
                 await httpContext.Response.Body.FlushAsync(ct);
+                logger?.LogDebug("  └─ [DONE] marker sent");
             }
-
-            logger?.LogDebug("  └─ [DONE] marker sent");
         }
 
         return Results.Empty;
