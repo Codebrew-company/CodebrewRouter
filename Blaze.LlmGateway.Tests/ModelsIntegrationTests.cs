@@ -51,7 +51,6 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     services.AddKeyedSingleton<IChatClient>("FoundryLocal", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("GithubModels", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("OllamaLocal", mockChatClient.Object);
-                    services.AddKeyedSingleton<IChatClient>("LmStudio", mockChatClient.Object);
 
                     foreach (var (dest, _) in OpenCodeGoModels.ModelNames)
                     {
@@ -59,10 +58,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
                     }
 
                     services.AddSingleton<IModelCatalog>(new FakeModelCatalog());
-                    
-                    // Configure LM Studio with a valid endpoint for IsLmStudioConfigured check.
-                    // Discovery will fail gracefully (network timeout), but the chat probe
-                    // will use our mock client, so the provider ends up healthy in the registry.
+
                     services.PostConfigure<LlmGatewayOptions>(options =>
                     {
                         options.Providers.OpenCodeGo.ApiKey = "sk-test";
@@ -155,7 +151,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
             }
         }
 
-        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "LocalGemma", "CodebrewRouter" };
+        var knownProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LocalGemma", "CodebrewRouter" };
         var hasKnownProvider = providers.Any(p => knownProviders.Contains(p));
         Assert.True(hasKnownProvider, $"No known providers found. Found: {string.Join(", ", providers)}");
     }
@@ -288,7 +284,7 @@ public class ModelsIntegrationTests : IAsyncLifetime
         // Assert
         Assert.True(json.RootElement.TryGetProperty("data", out var data));
 
-        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LmStudio", "LocalGemma", "CodebrewRouter", "Hermes" };
+        var validProviders = new[] { "AzureFoundry", "FoundryLocal", "GithubModels", "OllamaLocal", "LocalGemma", "CodebrewRouter", "Hermes" };
 
         foreach (var model in data.EnumerateArray())
         {
@@ -415,7 +411,6 @@ public class ModelsIntegrationTests : IAsyncLifetime
             .ToArray();
 
         Assert.Contains("LocalGemma", providers);
-        Assert.DoesNotContain("LmStudio", providers);
         Assert.DoesNotContain("OpenCodeGo_Qwen3_5Plus", providers);
         Assert.DoesNotContain("AzureFoundry", providers);
         Assert.DoesNotContain("FoundryLocal", providers);
@@ -438,7 +433,6 @@ public class ModelsIntegrationTests : IAsyncLifetime
             .ToHashSet();
 
         Assert.Contains("LocalGemma", providers);
-        Assert.DoesNotContain("LmStudio", providers);
         Assert.DoesNotContain("AzureFoundry", providers);
         Assert.DoesNotContain("FoundryLocal", providers);
     }
@@ -500,11 +494,11 @@ public class ModelsIntegrationTests : IAsyncLifetime
         registry.UpdateSnapshot(
             [
                 new AvailableModel("gpt-4o", "AzureFoundry", "openai", "configured", "https://example", Enabled: true, LastCheckedUtc: checkedAt),
-                new AvailableModel("local-model", "LmStudio", "lmstudio", "configured", "http://192.168.16.56:1234/v1", Enabled: false, ErrorMessage: "Connection refused", LastCheckedUtc: checkedAt)
+                new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "configured", "http://192.168.16.53:11434", Enabled: false, ErrorMessage: "Connection refused", LastCheckedUtc: checkedAt)
             ],
             [
                 new Blaze.LlmGateway.Api.ProviderAvailabilitySnapshot("AzureFoundry", true, null, checkedAt),
-                new Blaze.LlmGateway.Api.ProviderAvailabilitySnapshot("LmStudio", false, "Connection refused", checkedAt)
+                new Blaze.LlmGateway.Api.ProviderAvailabilitySnapshot("OllamaLocal", false, "Connection refused", checkedAt)
             ]);
 
         var response = await _client!.GetAsync("/v1/models/diagnostics");
@@ -514,12 +508,12 @@ public class ModelsIntegrationTests : IAsyncLifetime
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("degraded", json.RootElement.GetProperty("status").GetString());
 
-        var lmStudio = json.RootElement.GetProperty("models")
+        var ollamaLocal = json.RootElement.GetProperty("models")
             .EnumerateArray()
-            .Single(model => model.GetProperty("provider").GetString() == "LmStudio");
+            .Single(model => model.GetProperty("provider").GetString() == "OllamaLocal");
 
-        Assert.False(lmStudio.GetProperty("enabled").GetBoolean());
-        Assert.Equal("Connection refused", lmStudio.GetProperty("errorMessage").GetString());
+        Assert.False(ollamaLocal.GetProperty("enabled").GetBoolean());
+        Assert.Equal("Connection refused", ollamaLocal.GetProperty("errorMessage").GetString());
     }
 
     [Fact]
@@ -590,7 +584,6 @@ public class ModelsIntegrationTests : IAsyncLifetime
                 new AvailableModel("gpt-4o", "AzureFoundry", "openai", "configured"),
                 new AvailableModel("Phi-4-mini-instruct-cuda-gpu:5", "FoundryLocal", "openai", "configured"),
                 new AvailableModel("gemma4:e4b", "OllamaLocal", "ollama", "live"),
-                new AvailableModel("local-model", "LmStudio", "lmstudio", "configured"),
                 new AvailableModel("local-gemma", "LocalGemma", "lmkit", "configured")
             ]);
 

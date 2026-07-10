@@ -72,7 +72,7 @@ public sealed class SqliteProtocolStoreTests : IDisposable
     public async Task RouteDecisions_CappedAndOrdered()
     {
         using var store = CreateStore();
-        await store.AddRouteDecisionAsync(new RouteDecision("rd_1", DateTimeOffset.UtcNow, "auto", "LmStudio", "keyword"));
+        await store.AddRouteDecisionAsync(new RouteDecision("rd_1", DateTimeOffset.UtcNow, "auto", "OllamaRouter", "keyword"));
         await store.AddRouteDecisionAsync(new RouteDecision("rd_2", DateTimeOffset.UtcNow, "auto", "LocalGemma", "fallback"));
 
         var decisions = await store.ListRouteDecisionsAsync(10);

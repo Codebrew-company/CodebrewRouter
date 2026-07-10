@@ -88,6 +88,7 @@ Create a BenchmarkDotNet project (`Blaze.LlmGateway.Benchmarks`) to benchmark th
 
 - **Build & Quality:** Always run build and fix all warnings and errors, if any. Always run tests to ensure 100% passing rate and maintain up to 95% code coverage.
 - **Dependencies:** Always update NuGet packages to the latest versions to help protect against vulnerabilities.
+- **Session Logs:** On every checkin, create or update a session log at `Docs/session-logs/YYYY-MM-DD.md` documenting what was worked on: goals, files changed, config changes, bug fixes, test deltas, and items deferred. Use `Docs/session-logs/2026-07-08.md` as the template.
 - Primary constructors, collection expressions (`[]`).
 - Keep `Program.cs` clean; extract complex DI into extension methods.
 

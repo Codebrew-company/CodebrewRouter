@@ -30,9 +30,9 @@ public sealed class ModelLockRegistryTests
     {
         var registry = Create();
 
-        registry.ReportFailure("LmStudio", "Connection refused");
+        registry.ReportFailure("OllamaRouter", "Connection refused");
 
-        registry.IsLocked("LmStudio", out _).Should().BeFalse();
+        registry.IsLocked("OllamaRouter", out _).Should().BeFalse();
     }
 
     [Fact]

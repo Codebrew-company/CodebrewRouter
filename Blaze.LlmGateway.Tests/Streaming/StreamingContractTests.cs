@@ -61,7 +61,6 @@ public sealed class StreamingContractTests : IAsyncLifetime
 
                     // Register mock chat client for all providers
                     services.AddSingleton(mockChatClient.Object);
-                    services.AddKeyedSingleton<IChatClient>("LmStudio", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("AzureFoundry", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("GithubModels", mockChatClient.Object);
                     services.AddKeyedSingleton<IChatClient>("OpenRouter", mockChatClient.Object);

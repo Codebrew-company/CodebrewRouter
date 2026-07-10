@@ -12,6 +12,12 @@ namespace Blaze.LlmGateway.Tests.LocalInference;
 
 public class RuntimeDownloadModelProviderTests
 {
+    static RuntimeDownloadModelProviderTests()
+    {
+        // Tests download byte-sized fixtures; disable the poisoned-cache size floor.
+        RuntimeDownloadModelProvider.MinPlausibleModelBytes = 1;
+    }
+
     private readonly LocalInferenceOptions _defaultOptions = new()
     {
         Enabled = true,

@@ -50,7 +50,6 @@ public sealed class CodebrewRouterChatClient(
 
         return providerKey switch
         {
-            "LmStudio"    => gatewayOptions.Providers.LmStudio.Model,
             "OllamaRouter" => gatewayOptions.Providers.OllamaRouter.Model,
             _ => providerKey
         };
@@ -162,7 +161,7 @@ public sealed class CodebrewRouterChatClient(
             }
         }
 
-        Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
+        Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LocalGemma"), LogLevel.Warning);
 
         var exhaustedMessage = BuildProviderUnavailableMessage(activeOptions, taskType, providers, providerFailures);
         if (GatewayOptions.OfflineOnly)
@@ -170,7 +169,7 @@ public sealed class CodebrewRouterChatClient(
             throw new InvalidOperationException(exhaustedMessage);
         }
 
-        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, activeOptions, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LocalGemma", cleanedMessages, activeOptions, options, cancellationToken)
             ?? cleanedMessages;
         return await InnerClient.GetResponseAsync(innerMessages, options, cancellationToken);
     }
@@ -296,7 +295,7 @@ public sealed class CodebrewRouterChatClient(
             }
         }
 
-        Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LmStudio"), LogLevel.Warning);
+        Log(new RouterExhaustedEvent(providers.Length, taskType.ToString(), "LocalGemma"), LogLevel.Warning);
 
         var exhaustedMessage = BuildProviderUnavailableMessage(activeOptions, taskType, providers, providerFailures);
         if (GatewayOptions.OfflineOnly)
@@ -316,13 +315,13 @@ public sealed class CodebrewRouterChatClient(
             throw new InvalidOperationException(exhaustedMessage);
         }
 
-        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LmStudio", cleanedMessages, activeOptions, options, cancellationToken)
+        var innerMessages = await PrepareMessagesForProviderAsync(providers.Length + 1, "LocalGemma", cleanedMessages, activeOptions, options, cancellationToken)
             ?? cleanedMessages;
         var innerResult = await TryGetFirstChunkWithVisibleRecoveryAsync(InnerClient, innerMessages, options, cancellationToken);
         if (!innerResult.Success)
         {
             var innerReason = innerResult.FailureReason ?? "InnerClient probe failed";
-            Log(new RouterFailEvent(0, "LmStudio", "InnerClient", innerReason), LogLevel.Error);
+            Log(new RouterFailEvent(0, "LocalGemma", "InnerClient", innerReason), LogLevel.Error);
             if (innerResult.IsEmptyCompletion)
             {
                 yield return CreateEmptyVisibleResponseUpdate();
@@ -353,7 +352,7 @@ public sealed class CodebrewRouterChatClient(
             }
             catch (Exception)
             {
-                Log(new RouterMidstreamFailEvent("LmStudio", "InnerClient"), LogLevel.Warning);
+                Log(new RouterMidstreamFailEvent("LocalGemma", "InnerClient"), LogLevel.Warning);
                 streamFailed = true;
             }
 
@@ -362,7 +361,7 @@ public sealed class CodebrewRouterChatClient(
                 await innerEnumerator.DisposeAsync();
                 if (!streamFailed)
                 {
-                    Log(new RouterStreamCompleteEvent(innerChunkCount, "LmStudio", "InnerClient", taskType.ToString(), globalSw.ElapsedMilliseconds));
+                    Log(new RouterStreamCompleteEvent(innerChunkCount, "LocalGemma", "InnerClient", taskType.ToString(), globalSw.ElapsedMilliseconds));
                 }
                 yield break;
             }
@@ -505,8 +504,6 @@ public sealed class CodebrewRouterChatClient(
 
         return providerKey switch
         {
-            "LmStudio" => HasValue(providers.LmStudio.Endpoint) && HasValue(providers.LmStudio.Model) && availabilityRegistry.IsProviderAvailable("LmStudio"),
-
             var k when k.StartsWith("OpenCodeGo_", StringComparison.OrdinalIgnoreCase)
                 => HasValue(providers.OpenCodeGo.ApiKey) && availabilityRegistry.IsProviderAvailable(k),
 
@@ -520,13 +517,6 @@ public sealed class CodebrewRouterChatClient(
 
         switch (providerKey)
         {
-            case "LmStudio":
-                budget = new ProviderContextBudget(
-                    providers.LmStudio.Model,
-                    providers.LmStudio.MaxContextTokens,
-                    providers.LmStudio.ReservedOutputTokens);
-                return HasValue(providers.LmStudio.Model) && providers.LmStudio.MaxContextTokens > 0;
-
             case var k when k.StartsWith("OpenCodeGo_", StringComparison.OrdinalIgnoreCase):
                 budget = new ProviderContextBudget(
                     k,

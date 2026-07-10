@@ -1,6 +1,6 @@
 # ADR-0005: Local runtime compatibility — LM Studio and llama.cpp as OpenAI-compatible catalog entries
 
-- **Status:** Proposed
+- **Status:** Proposed — *LM Studio provider removed 2026-07-08 (redundant; Ollama/LocalGemma cover local inference). The llama.cpp / OpenAI-compatible-catalog reasoning below still stands; treat LM Studio here as one historical example, not a current provider.*
 - **Date:** 2026-04-17
 - **Deciders:** Architecture
 - **Related:** ADR-0002, [PRD §7.2](../../PRD/blaze-llmgateway-prd.md), [plan/llm-agent-platform-plan.md](../../plan/llm-agent-platform-plan.md) §"Phase 2 - Provider/model catalog"

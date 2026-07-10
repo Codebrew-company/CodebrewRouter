@@ -136,7 +136,7 @@ public sealed class ModelSelectionResolverTests
                         ModelId = "yardly",
                         FallbackRules =
                         {
-                            ["General"] = ["LmStudio"]
+                            ["General"] = ["OllamaRouter"]
                         }
                     }
                 }

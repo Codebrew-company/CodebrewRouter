@@ -59,18 +59,18 @@ public sealed class ConfigDrivenProviderRegistrationTests
     [Fact]
     public void CodeRegisteredProviders_AreNotDoubleRegistered()
     {
-        // "LmStudio" is registered in code; a catalog entry with the same provider
+        // "DerpYardly" is registered in code; a catalog entry with the same provider
         // key must not shadow it. Resolving must not throw.
         using var provider = Build(new ProviderDeploymentConfig
         {
-            Name = "lmstudio-dupe",
-            Provider = "LmStudio",
+            Name = "derpyardly-dupe",
+            Provider = "DerpYardly",
             Endpoint = "http://127.0.0.1:1234/v1",
             Model = "x",
             Enabled = true
         });
 
-        var client = provider.GetKeyedService<IChatClient>("LmStudio");
+        var client = provider.GetKeyedService<IChatClient>("DerpYardly");
         client.Should().NotBeNull();
     }
 }

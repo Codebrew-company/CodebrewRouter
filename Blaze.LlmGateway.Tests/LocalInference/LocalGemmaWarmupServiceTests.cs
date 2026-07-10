@@ -131,8 +131,23 @@ public sealed class LocalGemmaWarmupServiceTests
 
         await service.StartAsync(CancellationToken.None);
 
-        state.Snapshot.Status.Should().Be(LocalGemmaWarmupStatus.Failed);
+        // Non-blocking mode runs the warmup in the background; wait for the state to land.
+        await WaitForStatusAsync(state, LocalGemmaWarmupStatus.Failed);
         logger.Messages.Should().Contain(message => message.StartsWith(LocalWarmupLog.FailTag, StringComparison.Ordinal));
+    }
+
+    private static async Task WaitForStatusAsync(
+        LocalGemmaWarmupState state,
+        LocalGemmaWarmupStatus expected,
+        int timeoutMs = 5000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (state.Snapshot.Status != expected && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+        }
+
+        state.Snapshot.Status.Should().Be(expected);
     }
 
     [Fact]
@@ -249,7 +264,8 @@ public sealed class LocalGemmaWarmupServiceTests
 
         await service.StartAsync(CancellationToken.None);
 
-        state.Snapshot.Status.Should().Be(LocalGemmaWarmupStatus.Failed);
+        // Non-blocking mode runs the warmup in the background; wait for the state to land.
+        await WaitForStatusAsync(state, LocalGemmaWarmupStatus.Failed);
         logger.Messages.Should().Contain(message => message.StartsWith(LocalWarmupLog.FailTag, StringComparison.Ordinal));
     }
 

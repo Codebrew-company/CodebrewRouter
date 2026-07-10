@@ -11,9 +11,7 @@ using OllamaSharp;
 namespace Blaze.LlmGateway.Api;
 
 public sealed class ModelAvailabilityHeartbeatService(
-    IServiceScopeFactory serviceScopeFactory,
     IOptions<LlmGatewayOptions> options,
-    LmStudioModelDiscovery lmStudioModelDiscovery,
     ModelAvailabilityRegistry registry,
     ILogger<ModelAvailabilityHeartbeatService> logger) : IHostedService, IDisposable
 {
@@ -115,9 +113,6 @@ public sealed class ModelAvailabilityHeartbeatService(
         }
 
         // Probe local models only (local-BYOK approach)
-        logger.LogDebug("  ├─ Probing LM Studio");
-        await ProbeLmStudioAsync(models, providers, checkedAt, cancellationToken);
-        
         logger.LogDebug("  ├─ Probing Ollama Router with failover");
         await ProbeOllamaWithFailoverAsync(
             modelId: _options.Providers.OllamaRouter.Model,
@@ -175,15 +170,6 @@ public sealed class ModelAvailabilityHeartbeatService(
             _options.Providers.OllamaRouter.PrimaryEndpoint,
             !string.IsNullOrWhiteSpace(_options.Providers.OllamaRouter.Model),
             checkedAt);
-        AddConfiguredModel(
-            models,
-            providers,
-            "LmStudio",
-            _options.Providers.LmStudio.Model,
-            "lmstudio",
-            _options.Providers.LmStudio.Endpoint,
-            IsLmStudioConfigured(_options.Providers.LmStudio),
-            checkedAt);
 
         AddVirtualModels(models, providers, checkedAt);
 
@@ -203,134 +189,6 @@ public sealed class ModelAvailabilityHeartbeatService(
                     Enabled: true,
                     LastCheckedUtc: checkedAt));
             }
-        }
-    }
-
-    private async Task ProbeLmStudioAsync(
-        ICollection<AvailableModel> models,
-        ICollection<ProviderAvailabilitySnapshot> providers,
-        DateTimeOffset checkedAt,
-        CancellationToken cancellationToken)
-    {
-        var lmStudioOptions = _options.Providers.LmStudio;
-        if (!IsLmStudioConfigured(lmStudioOptions))
-        {
-            logger.LogDebug("  ├─ LM Studio not configured, skipping probe");
-            return;
-        }
-
-        logger.LogInformation("🔍 Probing LM Studio at {Endpoint}", lmStudioOptions.Endpoint);
-        try
-        {
-            var discoveredModels = new List<AvailableModel>();
-
-            if (!string.IsNullOrWhiteSpace(lmStudioOptions.Endpoint))
-            {
-                using var timeoutCts = CreateTimeoutToken(cancellationToken);
-                logger.LogDebug("  ├─ Discovering models from {Endpoint}", lmStudioOptions.Endpoint);
-                var discoveryResult = await lmStudioModelDiscovery.TryDiscoverModelsAsync(
-                    lmStudioOptions.Endpoint,
-                    lmStudioOptions.ApiKey,
-                    timeoutCts.Token);
-
-                if (discoveryResult.Success && discoveryResult.Models.Count > 0)
-                {
-                    discoveredModels = discoveryResult.Models.ToList();
-                    logger.LogDebug("  ├─ ✅ Discovered {Count} models from LM Studio", discoveredModels.Count);
-                }
-                else
-                {
-                    logger.LogDebug("  ├─ ⚠️ No models discovered or discovery failed");
-                }
-            }
-
-            // Probe chat with configured model to validate provider health
-            logger.LogDebug("  ├─ Sending probe message (ping) to LM Studio");
-            using var chatTimeoutCts = CreateTimeoutToken(cancellationToken);
-            using var scope = serviceScopeFactory.CreateScope();
-            var client = scope.ServiceProvider.GetRequiredKeyedService<IChatClient>("LmStudio");
-            var response = await client.GetResponseAsync(
-                [new ChatMessage(ChatRole.User, "ping")],
-                new ChatOptions { MaxOutputTokens = 1, Temperature = 0f },
-                chatTimeoutCts.Token);
-
-            // Chat probe succeeded — mark provider and models as enabled
-            logger.LogInformation("✅ LM Studio probe successful");
-            providers.Add(new ProviderAvailabilitySnapshot("LmStudio", true, null, checkedAt));
-
-            if (discoveredModels.Count > 0)
-            {
-                // Add discovered models as enabled
-                logger.LogDebug("  ├─ Adding {Count} discovered models", discoveredModels.Count);
-                foreach (var discoveredModel in discoveredModels)
-                {
-                    models.Add(discoveredModel with
-                    {
-                        Enabled = true,
-                        ErrorMessage = null,
-                        LastCheckedUtc = checkedAt
-                    });
-                }
-
-                // If configured model is not in discovered list, add it too for backward compat
-                if (!discoveredModels.Any(m => string.Equals(m.Id, lmStudioOptions.Model, StringComparison.OrdinalIgnoreCase)) &&
-                    !string.IsNullOrWhiteSpace(lmStudioOptions.Model))
-                {
-                    logger.LogDebug("  ├─ Adding configured fallback model: {Model}", lmStudioOptions.Model);
-                    models.Add(new AvailableModel(
-                        lmStudioOptions.Model,
-                        "LmStudio",
-                        "lmstudio",
-                        "configured",
-                        lmStudioOptions.Endpoint,
-                        Enabled: true,
-                        LastCheckedUtc: checkedAt));
-                }
-            }
-            else
-            {
-                // No discovered models — fall back to configured model
-                logger.LogDebug("  ├─ No discovered models, adding configured model: {Model}", lmStudioOptions.Model);
-                models.Add(new AvailableModel(
-                    lmStudioOptions.Model,
-                    "LmStudio",
-                    "lmstudio",
-                    "configured",
-                    lmStudioOptions.Endpoint,
-                    Enabled: true,
-                    LastCheckedUtc: checkedAt));
-            }
-
-            logger.LogInformation(
-                "✅ LM Studio availability probe succeeded - Model: {Model}, Response: {ResponseLength} bytes",
-                lmStudioOptions.Model,
-                response.Text?.Length ?? 0);
-        }
-        catch (Exception ex)
-        {
-            var error = GetErrorMessage(ex);
-            logger.LogError(ex, "❌ LM Studio availability probe failed: {Error}", error);
-            if (IsOptionalLocalProvider("LmStudio"))
-            {
-                logger.LogInformation(
-                    "Availability probe failed for optional local provider LmStudio: {Error}",
-                    error);
-            }
-            else
-            {
-                logger.LogWarning(ex, "LmStudio availability probe failed: {Error}", error);
-            }
-
-            providers.Add(new ProviderAvailabilitySnapshot("LmStudio", false, error, checkedAt));
-            models.Add(new AvailableModel(
-                lmStudioOptions.Model,
-                "LmStudio",
-                "lmstudio",
-                "configured",
-                lmStudioOptions.Endpoint,
-                Enabled: false,
-                ErrorMessage: error,
-                LastCheckedUtc: checkedAt));
         }
     }
 
@@ -625,15 +483,6 @@ public sealed class ModelAvailabilityHeartbeatService(
 
     private static string GetErrorMessage(Exception exception)
         => exception.GetBaseException().Message;
-
-    private static bool IsLmStudioConfigured(LmStudioOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
-           !string.IsNullOrWhiteSpace(options.Model);
-
-    private static bool IsOptionalLocalProvider(string providerKey)
-        => string.Equals(providerKey, "FoundryLocal", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(providerKey, "OllamaLocal", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(providerKey, "LmStudio", StringComparison.OrdinalIgnoreCase);
 
     private async Task ProbeOpenCodeGoAsync(
         ICollection<AvailableModel> models,

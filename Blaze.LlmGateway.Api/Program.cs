@@ -48,6 +48,7 @@ builder.Services.Configure<LlmGatewayOptions>(
     builder.Configuration.GetSection(LlmGatewayOptions.SectionName));
 
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("ModelsHealthCheck");
 builder.Services.AddHttpClient<MemoryService>();
 builder.Services.AddSingleton<MemoryService>(sp =>
 {
@@ -57,7 +58,6 @@ builder.Services.AddSingleton<MemoryService>(sp =>
     return new MemoryService(httpClient, config);
 });
 builder.Services.AddSingleton<AzureFoundryModelDiscovery>();
-builder.Services.AddSingleton<LmStudioModelDiscovery>();
 builder.Services.AddSingleton<ModelAvailabilityRegistry>();
 builder.Services.AddSingleton<IModelAvailabilityRegistry>(sp => sp.GetRequiredService<ModelAvailabilityRegistry>());
 builder.Services.AddHostedService<ModelAvailabilityHeartbeatService>();
@@ -153,8 +153,17 @@ builder.Services.AddCodebrewRouterLocalProvider(builder.Configuration);
 
 // ============================================================================
 
+builder.Services.AddSingleton<ModelProbeHealthCheck>(); // singleton so the probe cache survives requests
 builder.Services.AddHealthChecks()
-    .AddCheck<ModelProviderHealthCheck>("model_providers", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
+    .AddCheck<ModelProviderHealthCheck>("model_providers", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded)
+    .AddCheck<ModelsLoadedHealthCheck>("models_loaded",
+        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+        tags: ["models"])
+    // Deep per-model probe ("Hello, what model are you using?"): excluded from /health via
+    // the "probe" tag (real completions, paid tokens); served on demand at /health/models/probe.
+    .AddCheck<ModelProbeHealthCheck>("models_probe",
+        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+        tags: ["probe", "models-probe"]);
 
 // MCP integration disabled (microsoft-learn server connection issues)
 // To re-enable: uncomment below and ensure @microsoft/mcp-server-microsoft-learn is available
@@ -211,6 +220,19 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "Single API gateway for Brew, Hermes Fleet, mem0 memory, jarvis_ai voice, and Yardly."
     });
+
+    // Bearer auth: user clicks "Authorize" in Swagger/Scalar and enters their API key
+    // (e.g., th1s1sucks!! for dev). All /v1/* endpoints require this.
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        Description = "Enter your API key (e.g., th1s1sucks!! for dev, or any minted key)"
+    });
+    c.AddSecurityRequirement(_ => new Microsoft.OpenApi.OpenApiSecurityRequirement
+    {
+        { new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer"), [] }
+    });
 });
 
 // Dev-only permissive CORS so playground UIs (Open WebUI, Agent Framework DevUI)
@@ -234,6 +256,34 @@ var app = builder.Build();
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
 var aspireNote = isRunningUnderAspire ? " (via Aspire)" : " (standalone)";
 startupLogger.LogInformation("🟢 Blaze.LlmGateway.Api starting up{AspireNote}...", aspireNote);
+
+// Dev-time: seed known API keys for playground UIs (Open WebUI, DevUI, Scalar).
+// SeedDevKeys (default false) is the gate — do NOT also require IsDevelopment(): a containerized
+// run defaults to Production, which would silently skip seeding and 401 Open WebUI's key.
+if (app.Configuration.GetValue("LlmGateway:Auth:SeedDevKeys", false))
+{
+    using var seedScope = app.Services.CreateScope();
+    var seedStore = seedScope.ServiceProvider.GetRequiredService<IProtocolStore>();
+    var seedKeyCache = seedScope.ServiceProvider.GetRequiredService<ApiKeyCache>();
+    foreach (var (keyMaterial, name) in new (string, string)[]
+             { ("sk-blaze-openwebui", "Open WebUI"), ("sk-blaze-devui", "Agent DevUI"), ("th1s1sucks!!", "Scalar"), ("sk-blaze-healthcheck", "Health Check") })
+    {
+        var existing = seedStore.ListApiKeysAsync().GetAwaiter().GetResult();
+        if (existing.Any(k => k.Key == keyMaterial)) continue;
+
+        seedStore.SaveApiKeyAsync(new AdminApiKey(
+            Id: Ids.New("key"),
+            TenantId: "tenant_default",
+            Name: name,
+            Key: keyMaterial,
+            AllowedModels: ["codebrewRouter", "codebrewSharpClient", "fusion", "auto", "brew"],
+            AllowCloud: true,
+            Scopes: ["chat", "responses", "a2a"],
+            CreatedAt: DateTimeOffset.UtcNow)).GetAwaiter().GetResult();
+        seedKeyCache.Invalidate();
+        startupLogger.LogInformation("🔑 Seeded dev API key '{Name}'", name);
+    }
+}
 startupLogger.LogDebug("  ├─ Environment: {Environment}", app.Environment.EnvironmentName);
 if (isRunningUnderAspire)
 {
@@ -245,6 +295,15 @@ else
 }
 
 app.MapOpenApi();
+
+if (app.Environment.IsDevelopment())
+{
+    // Dev: auto-inject the Bearer token into Swagger/Scalar HTML so "Try it out"
+    // works immediately without the user clicking "Authorize". In Release,
+    // the token is never exposed — the user enters it manually via the UI.
+    app.Use(DevApiDocAuthInjector);
+}
+
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "CodebrewRouter API v1"));
 app.MapScalarApiReference("/scalar/v1", options =>
@@ -399,6 +458,39 @@ startupLogger.LogInformation("  ├─ Dashboard available at /dashboard");
 
 // ── Brew API endpoints (consolidated from Brew.Api) ──
 
+// Deep per-model probe: real "Hello, what model are you using?" completion per catalog model.
+// On-demand only (excluded from /health via the "probe" tag); results cached 5 min.
+// (/health/models is the lighter models-loaded readiness check.)
+app.MapHealthChecks("/health/models/probe", new HealthCheckOptions
+{
+    Predicate = r => r.Tags.Contains("models-probe"),
+    ResultStatusCodes =
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = StatusCodes.Status200OK,
+        // Partial failures still return the report body.
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    },
+    ResponseWriter = async (httpContext, report) =>
+    {
+        httpContext.Response.ContentType = "application/json";
+        await httpContext.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            totalDurationMs = (long)report.TotalDuration.TotalMilliseconds,
+            checks = report.Entries.ToDictionary(
+                entry => entry.Key,
+                entry => new
+                {
+                    status = entry.Value.Status.ToString(),
+                    description = entry.Value.Description,
+                    models = entry.Value.Data
+                })
+        });
+    }
+});
+startupLogger.LogInformation("  ├─ Per-model probe available at /health/models/probe");
+
 // Health check (same as /health but at the Brew path for compat)
 app.MapGet("/api/health", () => Results.Ok(new { Status = "healthy", Timestamp = DateTime.UtcNow }))
    .WithTags("Brew")
@@ -474,6 +566,19 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("LlmGatewa
 app.MapDefaultEndpoints();
 startupLogger.LogInformation("  ├─ Health checks endpoint available at /health (Aspire readiness probes)");
 
+// Targeted model-readiness probe: returns 200 only when at least one model is loaded.
+app.MapHealthChecks("/health/models", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("models"),
+    ResultStatusCodes = new Dictionary<Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus, int>
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+    }
+});
+startupLogger.LogInformation("  ├─ Model readiness probe available at /health/models");
+
 // Catalog observability dashboard: Prometheus metrics endpoint
 app.UseOpenTelemetryPrometheusScrapingEndpoint();
 startupLogger.LogInformation("  ├─ Observability metrics available at /metrics (Prometheus)");
@@ -487,6 +592,69 @@ static bool FixedTimeEquals(string presented, string expected)
     var presentedBytes = System.Text.Encoding.UTF8.GetBytes(presented);
     var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expected);
     return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes);
+}
+
+// Dev-only middleware: injects a script into Swagger/Scalar HTML that
+// auto-preauthorizes the Bearer API key so "Try it out" works immediately.
+// In Release builds the middleware is never registered — the user enters
+// the key manually via the Authorize button.
+static async Task DevApiDocAuthInjector(HttpContext context, RequestDelegate next)
+{
+    var path = context.Request.Path.Value ?? "";
+    var isApiDoc = path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
+                   path.StartsWith("/scalar", StringComparison.OrdinalIgnoreCase);
+    if (!isApiDoc)
+    {
+        await next(context);
+        return;
+    }
+
+    var originalBody = context.Response.Body;
+    try
+    {
+        using var buffer = new MemoryStream();
+        context.Response.Body = buffer;
+
+        await next(context);
+
+        if (context.Response.StatusCode != 200)
+        {
+            buffer.Seek(0, SeekOrigin.Begin);
+            await buffer.CopyToAsync(originalBody);
+            return;
+        }
+
+        var contentType = context.Response.ContentType ?? "";
+        if (!contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            buffer.Seek(0, SeekOrigin.Begin);
+            await buffer.CopyToAsync(originalBody);
+            return;
+        }
+
+        buffer.Seek(0, SeekOrigin.Begin);
+        var html = await new StreamReader(buffer).ReadToEndAsync();
+
+        // Inject a small script that pre-authorizes the Bearer token for Swagger UI.
+        // Scalar picks up the auth from the OpenAPI security scheme automatically.
+        const string authScript =
+            "<script>setTimeout(function(){" +
+            "if(window.ui&&window.ui.preauthorizeApiKey)window.ui.preauthorizeApiKey('Bearer','th1s1sucks!!')" +
+            "},500)</script></head>";
+
+        html = html.Replace("</head>", authScript, StringComparison.Ordinal);
+
+        var modifiedBytes = System.Text.Encoding.UTF8.GetBytes(html);
+        context.Response.Body = originalBody;
+        context.Response.ContentLength = modifiedBytes.Length;
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await originalBody.WriteAsync(modifiedBytes);
+    }
+    catch
+    {
+        context.Response.Body = originalBody;
+        throw;
+    }
 }
 
 // For testing via WebApplicationFactory

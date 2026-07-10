@@ -1,4 +1,6 @@
+using Aspire.Hosting.ApplicationModel;
 using Blaze.LlmGateway.AppHost;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Blaze.LlmGateway.Tests;
@@ -32,14 +34,11 @@ public class AppHostCompositionTests
     {
         var root = FindRepositoryRoot();
         var source = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "AppHostComposition.cs"));
-        var normalizedSource = source.Replace("\r\n", "\n");
 
-        Assert.Contains(
-            "builder.AddScalarApiReference()\n            .WithApiReference(api)\n            .WaitFor(api)",
-            normalizedSource);
-        Assert.True(
-            CountOccurrences(source, ".WaitFor(api)") >= 3,
-            "Scalar, OpenWebUI, and Agent DevUI should all wait for API readiness.");
+        // openwebui + scalar are containers that must NOT WaitFor the host gateway (it trips
+        // Aspire's container tunnel); they reach it via host.docker.internal / its own UIs.
+        Assert.DoesNotContain("AddScalarApiReference", source);
+        Assert.Contains("host.docker.internal", source);
     }
 
     [Fact]
@@ -64,11 +63,33 @@ public class AppHostCompositionTests
         var appHostConfig = File.ReadAllText(Path.Combine(root, "Blaze.LlmGateway.AppHost", "appsettings.json"));
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 
-        const string openWebUiRelease = "v0.9.5";
+        const string openWebUiRelease = "v0.10.2";
 
         Assert.Contains("DevUI:OpenWebUIImageTag", source);
         Assert.Contains($"\"OpenWebUIImageTag\": \"{openWebUiRelease}\"", appHostConfig);
         Assert.Contains($"ghcr.io/open-webui/open-webui:{openWebUiRelease}", readme);
+    }
+
+    [Fact]
+    public async Task OpenWebUi_IsCreatedInCodebrewRouterDockerDesktopGroup()
+    {
+        using var app = AppHostComposition.Build([]);
+        var model = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var openWebUi = model.Resources.Single(resource => resource.Name == "openwebui");
+        var annotation = openWebUi.Annotations
+            .OfType<ContainerRuntimeArgsCallbackAnnotation>()
+            .Single();
+        var args = new List<object>();
+
+        await annotation.Callback(new ContainerRuntimeArgsCallbackContext(args, CancellationToken.None));
+
+        Assert.Equal(
+            [
+                "--label", "com.docker.compose.project=CodebrewRouter",
+                "--label", "com.docker.compose.service=openwebui",
+                "--label", "com.docker.compose.container-number=1"
+            ],
+            args);
     }
 
     [Fact]

@@ -96,14 +96,14 @@ public class HybridLocalRemoteRoutingStrategyTests
         var mockFallback = new Mock<IRoutingStrategy>();
         mockFallback
             .Setup(s => s.ResolveAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RouteDestination.LmStudio);
+            .ReturnsAsync(RouteDestination.OllamaRouter);
 
         var options = new LocalInferenceOptions { Enabled = true, ModelPath = "/models/gemma.gguf" };
         var strategy = CreateStrategy(options, modelProvider: mockProvider.Object, fallbackStrategy: mockFallback.Object);
 
         var result = await strategy.ResolveAsync(UserMessages("Hello"));
 
-        Assert.Equal(RouteDestination.LmStudio, result);
+        Assert.Equal(RouteDestination.OllamaRouter, result);
     }
 
     [Fact]
@@ -162,14 +162,14 @@ public class HybridLocalRemoteRoutingStrategyTests
         var mockFallback = new Mock<IRoutingStrategy>();
         mockFallback
             .Setup(s => s.ResolveAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(RouteDestination.LmStudio);
+            .ReturnsAsync(RouteDestination.OllamaRouter);
 
         var options = new LocalInferenceOptions { Enabled = true, ModelPath = "/models/gemma.gguf" };
         var strategy = CreateStrategy(options, modelProvider: mockProvider.Object, fallbackStrategy: mockFallback.Object);
 
         var result = await strategy.ResolveAsync(UserMessages("Hello"));
 
-        Assert.Equal(RouteDestination.LmStudio, result);
+        Assert.Equal(RouteDestination.OllamaRouter, result);
     }
 
     // ── Cancellation ────────────────────────────────────────────────────────

@@ -163,8 +163,6 @@ public sealed class CodebrewRouterOfflineTests
     [Fact]
     public async Task AvailabilitySeed_WhenLocalGemmaModelPathMissing_DisablesCodebrewRouterWithSpecificReason()
     {
-        var services = new ServiceCollection();
-        var serviceProvider = services.BuildServiceProvider();
         var registry = new ModelAvailabilityRegistry();
         var options = Options.Create(new LlmGatewayOptions
         {
@@ -189,9 +187,7 @@ public sealed class CodebrewRouterOfflineTests
             }
         });
         var heartbeat = new ModelAvailabilityHeartbeatService(
-            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             options,
-            new LmStudioModelDiscovery(new HttpClient(), NullLogger<LmStudioModelDiscovery>.Instance),
             registry,
             NullLogger<ModelAvailabilityHeartbeatService>.Instance);
 
@@ -214,8 +210,6 @@ public sealed class CodebrewRouterOfflineTests
     {
         const string gemma4Url =
             "https://huggingface.co/lm-kit/gemma-4-e4b-instruct-lmk/resolve/main/Gemma-4-E4B-It-7.5B-Q4_K_M.lmk";
-        var services = new ServiceCollection();
-        var serviceProvider = services.BuildServiceProvider();
         var registry = new ModelAvailabilityRegistry();
         var options = Options.Create(new LlmGatewayOptions
         {
@@ -240,9 +234,7 @@ public sealed class CodebrewRouterOfflineTests
             }
         });
         var heartbeat = new ModelAvailabilityHeartbeatService(
-            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             options,
-            new LmStudioModelDiscovery(new HttpClient(), NullLogger<LmStudioModelDiscovery>.Instance),
             registry,
             NullLogger<ModelAvailabilityHeartbeatService>.Instance);
 

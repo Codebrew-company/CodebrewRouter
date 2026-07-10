@@ -29,7 +29,7 @@ public class LlmGatewayOptions
     public AuthOptions Auth { get; set; } = new();
 
     /// <summary>
-    /// Per-provider rate limits keyed by the keyed-DI provider name (e.g. "LmStudio",
+    /// Per-provider rate limits keyed by the keyed-DI provider name (e.g. "OllamaRouter",
     /// "OpenCodeGo_DeepSeekV4Pro"). Applied as a token-bucket wrapper around the provider client.
     /// </summary>
     public Dictionary<string, ProviderRateLimitOptions> RateLimits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -48,7 +48,6 @@ public class LlmGatewayOptions
 public class ProvidersOptions
 {
     public OllamaRouterOptions OllamaRouter { get; set; } = new();
-    public LmStudioOptions LmStudio { get; set; } = new();
     public OpenCodeGoOptions OpenCodeGo { get; set; } = new();
     public DerpYardlyOptions DerpYardly { get; set; } = new();
     public HermesProviderOptions Hermes { get; set; } = new();
@@ -84,16 +83,6 @@ public class OllamaRouterOptions
     public int ReservedOutputTokens { get; set; } = 2048;
 }
 
-public class LmStudioOptions
-{
-    public string Endpoint { get; set; } = "http://192.168.16.56:1234/v1";
-    public string Model { get; set; } = "local-model";
-    /// <summary>LM Studio usually accepts any non-empty API key for its local OpenAI-compatible endpoint.</summary>
-    public string ApiKey { get; set; } = "notneeded";
-    public int MaxContextTokens { get; set; } = 32768;
-    public int ReservedOutputTokens { get; set; } = 2048;
-}
-
 public class OpenCodeGoOptions
 {
     public string BaseUrl { get; set; } = "https://opencode.ai/zen/go/v1";
@@ -111,11 +100,7 @@ public class RoutingOptions
     /// <summary>Circuit-breaker cooldown (minutes) after the meta-router model fails or times out.</summary>
     public int CircuitBreakerCooldownMinutes { get; set; } = 5;
     /// <summary>Failover chains: maps primary destination to list of fallback providers to try if primary fails.</summary>
-    public Dictionary<string, List<string>> FailoverChains { get; set; } = new()
-    {
-        { "OllamaRouter", ["LmStudio"] },
-        { "LmStudio", ["OllamaRouter"] }
-    };
+    public Dictionary<string, List<string>> FailoverChains { get; set; } = new();
 }
 
 public class ModelAvailabilityOptions
@@ -127,8 +112,8 @@ public class ModelAvailabilityOptions
 
 public class DerpYardlyOptions
 {
-    public string Endpoint { get; set; } = "http://127.0.0.1:8651/v1";
-    public string Model { get; set; } = "derp-yardly";
+    public string Endpoint { get; set; } = "";
+    public string Model { get; set; } = "";
     public string ApiKey { get; set; } = "";
     public int MaxContextTokens { get; set; } = 32768;
     public int ReservedOutputTokens { get; set; } = 2048;
@@ -146,6 +131,9 @@ public class AuthOptions
     /// false = explicit dev bypass; /v1 is open.
     /// </summary>
     public bool? RequireApiKey { get; set; }
+
+    /// <summary>API key used by internal health checks to probe /v1/models. Set in appsettings.</summary>
+    public string HealthCheckKey { get; set; } = "";
 
     /// <summary>Requests per minute allowed per API key on /v1. 0 = unlimited.</summary>
     public int RequestsPerMinutePerKey { get; set; }
